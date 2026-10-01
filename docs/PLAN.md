@@ -291,6 +291,8 @@ DATABASE_URL=sqlite:///./data/stockagent.db
   - **還原股價**（`indicators/price_adjust.py`）：每個除權息/面額變更事件的調整係數 = `參考價 / 前一日收盤價`（除權息用 `reference_price/before_price`，面額變更用 `after_price/before_price`），事件日**之前**的 OHLC 全部乘上係數（多事件連乘）；**最新一筆必等於原始價**。技術指標一律吃還原價；買賣點等「價位」與顯示用原始價。成交量只在面額變更/分割時反向調整（6763 分割後日量從約13萬股跳到231萬股）；配股因結果表未拆出股票股利比例，暫不調整成交量
     - ✅ 已完成（`indicators/price_adjust.py`，16 個測試）。真實資料驗證（`scripts/verify_price_adjust.py`）：6763 面額變更日原始漲跌 −90.51% → 還原 −5.09%；0056 除息日原始 −0.80% → 還原 +1.95%（實際上漲，原始價連方向都錯）；最新一筆還原價＝原始價
   - **回溯期間**：各dataset抓取天數集中定義在 `signals/config.py`（起始值於本Stage與使用者拍板），並寫一條測試確保 config 天數 ≥ 各指標最低需求（例如MA60需約90個日曆天）
+  - ✅ 回溯期間與技術參數已寫入 `signals/config.py`（價格180天，2026-10-01 使用者確認不看年線MA240）；真實交易日曆驗證 2024~2026 任一180天區間最少有114個交易日，≥ 指標需求88筆
+  - ✅ 技術指標數值（`indicators/technical.py`）：MA、RSI（Wilder）、台股KD（ta套件的KD算法與台股不同，自行實作）、MACD、布林（母體標準差）、均量；RSI/MACD 以 ta 套件為獨立參考比對，KD 手算驗證；人工對照用 `scripts/verify_technical.py`
   - ETF/無財報標的：基本面訊號在資料為空時回傳 None，不丟例外
 - **測試**：針對每個函式用構造假資料寫邊界case（剛好穿越當天、穿越前一天、資料不足）；還原股價用真實事件數值當fixture（如6763面額變更491→49.1、0056除息）
 - **實作**：`indicators/price_adjust.py`／`technical.py`／`chip.py`／`fundamental.py`／`signals/signal_builder.py`
