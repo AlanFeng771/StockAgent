@@ -308,6 +308,8 @@ DATABASE_URL=sqlite:///./data/stockagent.db
   - [x] 真實資料人工驗證腳本：`verify_price_adjust.py` / `verify_technical.py` / `verify_chip.py` / `verify_fundamental.py` / `verify_signals.py`
 
 ### Stage 3：LLM判斷層
+- **已拍板（2026-10-01）**：模型先用 `gpt-4o`（`.env` 的 `OPENAI_MODEL`，可替換）
+- **prompt 長度實測**（緊湊 JSON）：2330 約 7.9K 字元，其中新聞佔 57%，而新聞中連結又佔一半以上（2,319 字元，標題只有 908）。建議：送給 LLM 時不含新聞連結（連結保留在報告供網頁顯示）、JSON 不縮排 → 2330 約 5.5K 字元
 - **規格**：定義丟給 ChatGPT 的輸入（事實清單 JSON schema）與輸出（買點/賣點/風險/長期與否/判斷依據/信心程度的 JSON schema），用 OpenAI Structured Outputs 強制格式
 - **測試**：mock OpenAI API，驗證 1) prompt組裝內容包含必要事實欄位 2) 回傳能正確解析成內部 pydantic model 3) API失敗/未設Key時回傳`llm_status="failed"/"pending"`而不拋例外中斷
 - **實作**：`llm/prompt_templates.py`／`llm/report_generator.py`
