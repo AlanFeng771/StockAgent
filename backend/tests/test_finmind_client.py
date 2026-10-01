@@ -483,3 +483,37 @@ def test_new_methods_raise_sponsor_required_error():
 
     with pytest.raises(FinMindSponsorRequiredError):
         client.get_dividend_result("2330", "2026-01-01", "2026-09-30")
+
+
+# ---------------------------------------------------------------------------
+# get_stock_info（全市場股票基本資料）
+# ---------------------------------------------------------------------------
+
+def test_get_stock_info_renames_type_and_parses_dates():
+    raw = pd.DataFrame([
+        {"industry_category": "半導體業", "stock_id": "2330", "stock_name": "台積電", "type": "twse", "date": "2026-10-01"},
+        # 實測：缺日期時 API 回的是字串 "None"（不是 null）
+        {"industry_category": "受益證券", "stock_id": "01001T", "stock_name": "土銀富邦R1", "type": "twse", "date": "None"},
+        {"industry_category": "其他", "stock_id": "9999", "stock_name": "測試", "type": "twse", "date": None},
+    ])
+    calls = []
+
+    def fake(**kwargs):
+        calls.append(kwargs)
+        return raw
+
+    df = make_client(taiwan_stock_info=fake).get_stock_info()
+
+    assert calls == [{}]
+    assert list(df.columns) == ["stock_id", "stock_name", "industry_category", "market", "date"]
+    assert df.iloc[0]["market"] == "twse"
+    assert pd.api.types.is_datetime64_any_dtype(df["date"])
+    assert pd.isna(df.iloc[1]["date"])
+    assert pd.isna(df.iloc[2]["date"])
+
+
+def test_get_stock_info_empty_response_returns_empty_dataframe_with_expected_columns():
+    df = make_client(taiwan_stock_info=lambda **kwargs: pd.DataFrame()).get_stock_info()
+
+    assert df.empty
+    assert list(df.columns) == ["stock_id", "stock_name", "industry_category", "market", "date"]

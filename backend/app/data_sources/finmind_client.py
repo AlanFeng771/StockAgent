@@ -91,6 +91,12 @@ FinMind API 的日期格式。
   實測FinMind只公布到當年底（2026-10查2027回傳空資料），超出已公布範圍
   時回傳空DataFrame，呼叫端需自行退回備援規則。
 
+- ``get_stock_info() -> DataFrame``（**全市場**，不接受 stock_id）
+  欄位：stock_id, stock_name, industry_category, market（原始 type：twse/tpex/emerging）,
+  date（datetime64；實測缺日期時回字串 "None"，轉成 NaT）
+  實測同一代號會有多列（多個產業別、歷史日期），名稱可能帶前導空白或結尾星號
+  （6763：" 綠界科技"、"綠界科技*"），清理與挑選由 ``stock_profile.resolve_stock_profile`` 負責
+
 尚未納入：減資（``taiwan_stock_capital_reduction_reference_price``）。
 單股查詢免費但尚未找到有減資紀錄的股票驗證真實欄位、全市場查詢需sponsor，
 待驗證後再補。
@@ -210,6 +216,7 @@ _DIVIDEND_RESULT_COLUMNS = [
 ]
 _SPLIT_PRICE_COLUMNS = ["date", "stock_id", "type", "before_price", "after_price"]
 _TRADING_DATES_COLUMNS = ["date"]
+_STOCK_INFO_COLUMNS = ["stock_id", "stock_name", "industry_category", "market", "date"]
 
 
 class FinMindClient:
@@ -403,6 +410,16 @@ class FinMindClient:
             return df
         df["date"] = pd.to_datetime(df["date"])
         return df[_TRADING_DATES_COLUMNS].sort_values("date").reset_index(drop=True)
+
+    def get_stock_info(self) -> pd.DataFrame:
+        """全市場股票基本資料（底層SDK不接受stock_id）。"""
+        df = self._call("taiwan_stock_info", _STOCK_INFO_COLUMNS)
+        if df.empty:
+            return df
+        df = df.rename(columns={"type": "market"})
+        # 實測缺日期時 API 回字串 "None"；非 YYYY-MM-DD 的值一律視為無日期（NaT）
+        df["date"] = pd.to_datetime(df["date"], format="%Y-%m-%d", errors="coerce")
+        return df[_STOCK_INFO_COLUMNS]
 
 
 def create_finmind_client(settings: Settings | None = None, use_cache: bool = True) -> FinMindClient:
