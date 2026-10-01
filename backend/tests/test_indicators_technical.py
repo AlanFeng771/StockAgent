@@ -10,7 +10,7 @@ from backend.app.indicators.technical import compute_technical
 from backend.app.signals.config import TechnicalParams
 
 INDICATOR_COLUMNS = [
-    "ma5", "ma20", "ma60", "rsi", "k", "d",
+    "ma5", "ma20", "ma60", "rsi6", "rsi12", "k", "d",
     "macd_dif", "macd_signal", "macd_hist",
     "bb_middle", "bb_upper", "bb_lower",
     "vol_ma5", "vol_ma20",
@@ -117,20 +117,27 @@ def test_custom_ma_periods_produce_matching_columns():
 # RSI、MACD：以 ta 套件作為獨立參考實作比對
 # ---------------------------------------------------------------------------
 
-def test_rsi_matches_wilder_reference():
+@pytest.mark.parametrize("period", [6, 12])
+def test_rsi_matches_wilder_reference(period):
     closes = pd.Series(random_walk(120))
     df = compute_technical(make_adjusted(closes))
 
-    expected = RSIIndicator(closes, window=14).rsi()
-    pd.testing.assert_series_equal(df["rsi"], expected, check_names=False, atol=1e-9)
+    expected = RSIIndicator(closes, window=period).rsi()
+    pd.testing.assert_series_equal(df[f"rsi{period}"], expected, check_names=False, atol=1e-9)
+
+
+def test_custom_rsi_periods_produce_matching_columns():
+    df = compute_technical(make_adjusted(random_walk(40)), TechnicalParams(rsi_periods=(14,)))
+
+    assert "rsi14" in df.columns and "rsi6" not in df.columns
 
 
 def test_rsi_extremes():
     up = compute_technical(make_adjusted(list(range(1, 40))))
     down = compute_technical(make_adjusted(list(range(40, 1, -1))))
 
-    assert up["rsi"].iloc[-1] == pytest.approx(100.0)
-    assert down["rsi"].iloc[-1] == pytest.approx(0.0)
+    assert up["rsi6"].iloc[-1] == pytest.approx(100.0)
+    assert down["rsi6"].iloc[-1] == pytest.approx(0.0)
 
 
 def test_macd_matches_reference():
@@ -188,4 +195,4 @@ def test_kd_stays_within_0_and_100():
 def test_rsi_flat_price_is_neutral_50():
     df = compute_technical(make_adjusted([10.0] * 30))
 
-    assert df["rsi"].iloc[-1] == pytest.approx(50.0)
+    assert df["rsi12"].iloc[-1] == pytest.approx(50.0)

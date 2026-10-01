@@ -24,11 +24,20 @@
 技術指標參數（沿用台股業界慣例，2026-10-01 使用者確認不看年線 MA240）
 --------------------------------------------------------------------
 - 均線 MA5 / MA20 / MA60
-- RSI 14（Wilder 平滑）
+- RSI 6 / 12（Wilder 平滑；2026-10-01 使用者確認與看盤App一致，原本設計的 RSI14 不用）
 - KD 9,3,3（台股算法：K = 2/3 前K + 1/3 RSV，D = 2/3 前D + 1/3 K，初始 50）
 - MACD 12 / 26 / 9
 - 布林通道 20 日 ± 2 倍標準差
 - 均量 5 / 20 日
+- 指標一律以還原價計算（2026-10-01 使用者確認）。與看盤App（原始價）對照：用原始價
+  重算時 2330 的 MA20/MA60/KD/RSI6/RSI12/MACD 與App一致，差異完全來自還原價。
+  App 上標示「MACD」的數值對應本專案的 ``macd_signal``
+
+訊號判斷參數
+------------
+- 爆量：當日成交量 > ``volume_surge_ratio`` × 20日均量（預設 2.0）
+- 量縮：當日成交量 < ``volume_shrink_ratio`` × 20日均量（預設 0.5）
+  兩者無統一業界標準，2026-10-01 使用者確認先用預設值、需可調整
 """
 
 from __future__ import annotations
@@ -50,7 +59,7 @@ class LookbackDays:
 @dataclass(frozen=True)
 class TechnicalParams:
     ma_periods: tuple[int, ...] = (5, 20, 60)
-    rsi_period: int = 14
+    rsi_periods: tuple[int, ...] = (6, 12)
     kd_period: int = 9
     kd_smooth: int = 3  # K、D 的平滑係數 1/3
     macd_fast: int = 12
@@ -71,10 +80,17 @@ class TechnicalParams:
             self.bollinger_period,
             max(self.volume_ma_periods),
             self.kd_period * self.ema_warmup_multiplier,
-            self.rsi_period * self.ema_warmup_multiplier,
+            max(self.rsi_periods) * self.ema_warmup_multiplier,
             self.macd_slow * self.ema_warmup_multiplier + self.macd_signal,
         )
 
 
+@dataclass(frozen=True)
+class SignalParams:
+    volume_surge_ratio: float = 2.0
+    volume_shrink_ratio: float = 0.5
+
+
 LOOKBACK = LookbackDays()
 TECHNICAL = TechnicalParams()
+SIGNALS = SignalParams()

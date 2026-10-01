@@ -13,7 +13,7 @@ adj_volume 計算；**一律用還原價**，避免除權息、面額變更造�
 ``TechnicalParams.required_price_rows()`` 判斷。
 
 - ``ma{n}``：收盤價 n 日簡單移動平均，n 取自 ``params.ma_periods``（預設 ma5/ma20/ma60）
-- ``rsi``：RSI，Wilder 平滑（α = 1/period）；只漲不跌時為 100、只跌不漲時為 0、
+- ``rsi{n}``：RSI，n 取自 ``params.rsi_periods``（預設 rsi6/rsi12），Wilder 平滑（α = 1/n）；只漲不跌時為 100、只跌不漲時為 0、
   完全沒漲跌時為 50（``ta`` 套件此情況回 100，本專案改為中性值）
 - ``k`` / ``d``：台股 KD
     RSV = (收盤 − 近 N 日最低) / (近 N 日最高 − 近 N 日最低) × 100
@@ -45,7 +45,8 @@ def compute_technical(prices: pd.DataFrame, params: TechnicalParams = TECHNICAL)
 
     for n in params.ma_periods:
         out[f"ma{n}"] = close.rolling(n).mean()
-    out["rsi"] = _rsi(close, params.rsi_period)
+    for n in params.rsi_periods:
+        out[f"rsi{n}"] = _rsi(close, n)
     out["k"], out["d"] = _kd(close, high, low, params.kd_period, params.kd_smooth)
 
     dif = _ema(close, params.macd_fast) - _ema(close, params.macd_slow)

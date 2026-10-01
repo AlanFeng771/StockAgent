@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from backend.app.config import Settings
-from backend.app.signals.config import LOOKBACK, TECHNICAL, TechnicalParams
+from backend.app.signals.config import LOOKBACK, SIGNALS, TECHNICAL, TechnicalParams
 
 
 def estimate_min_trading_days(calendar_days: int) -> int:
@@ -34,3 +34,14 @@ def test_month_revenue_lookback_covers_yoy():
 
 def test_financial_statement_lookback_covers_eight_quarters_with_publication_lag():
     assert LOOKBACK.financial_statement >= 8 * 91 + 90
+
+
+def test_rsi_periods_follow_taiwan_app_convention():
+    # 2026-10-01 使用者確認：與看盤App一致，用 RSI6 / RSI12
+    assert TECHNICAL.rsi_periods == (6, 12)
+
+
+def test_volume_ratios_are_configurable_with_defaults():
+    assert SIGNALS.volume_surge_ratio == 2.0
+    assert SIGNALS.volume_shrink_ratio == 0.5
+    assert SIGNALS.volume_shrink_ratio < 1 < SIGNALS.volume_surge_ratio

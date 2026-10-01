@@ -7,6 +7,7 @@
 - 看盤軟體多半用**原始價**計算；本專案用還原價。近期沒有除權息/面額變更的股票，
   兩者應該一致；有事件的股票會有差異，這是預期行為
 - KD、MACD、RSI 是遞迴計算，起算點不同會有些微差距，資料越長差距越小
+- 看盤App上標示「MACD」的數值對應這裡的 macd_signal（不是 macd_dif）
 
 使用方式：
     uv run python backend/scripts/verify_technical.py [stock_id]
@@ -43,7 +44,7 @@ def main() -> None:
     print(f"{stock_id}：{len(df)} 筆交易日，期間內除權息/面額變更：{event_text}")
 
     columns = [
-        "date", "close", "ma5", "ma20", "ma60", "rsi", "k", "d",
+        "date", "close", "ma5", "ma20", "ma60", "rsi6", "rsi12", "k", "d",
         "macd_dif", "macd_signal", "macd_hist", "bb_upper", "bb_lower",
     ]
     view = df[columns].tail(5).copy()

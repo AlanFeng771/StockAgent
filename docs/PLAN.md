@@ -293,6 +293,7 @@ DATABASE_URL=sqlite:///./data/stockagent.db
   - **回溯期間**：各dataset抓取天數集中定義在 `signals/config.py`（起始值於本Stage與使用者拍板），並寫一條測試確保 config 天數 ≥ 各指標最低需求（例如MA60需約90個日曆天）
   - ✅ 回溯期間與技術參數已寫入 `signals/config.py`（價格180天，2026-10-01 使用者確認不看年線MA240）；真實交易日曆驗證 2024~2026 任一180天區間最少有114個交易日，≥ 指標需求88筆
   - ✅ 技術指標數值（`indicators/technical.py`）：MA、RSI（Wilder）、台股KD（ta套件的KD算法與台股不同，自行實作）、MACD、布林（母體標準差）、均量；RSI/MACD 以 ta 套件為獨立參考比對，KD 手算驗證；人工對照用 `scripts/verify_technical.py`
+    - 使用者對照券商App（2330，2026-10-01）：用原始價重算時 MA20/MA60/KD/RSI6/RSI12/MACD 與App一致（MACD 18.036 完全相同），差異完全來自還原價 → **確認維持還原價**；RSI 改為與App一致的 RSI6/RSI12；App 的「MACD」對應本專案 `macd_signal`
   - ETF/無財報標的：基本面訊號在資料為空時回傳 None，不丟例外
 - **測試**：針對每個函式用構造假資料寫邊界case（剛好穿越當天、穿越前一天、資料不足）；還原股價用真實事件數值當fixture（如6763面額變更491→49.1、0056除息）
 - **實作**：`indicators/price_adjust.py`／`technical.py`／`chip.py`／`fundamental.py`／`signals/signal_builder.py`
