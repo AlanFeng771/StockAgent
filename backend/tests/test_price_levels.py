@@ -27,7 +27,7 @@ def make_df(close=None, high=None, low=None, factor=None, **indicators):
         "adj_open": close * factor, "adj_high": high * factor, "adj_low": low * factor,
         "adj_close": close * factor, "adj_volume": 1000.0,
     })
-    defaults = {"ma5": 10.0, "ma20": 10.0, "ma60": 10.0, "bb_upper": 1000.0, "bb_lower": 10.0}
+    defaults = {"ma5": 10.0, "ma20": 10.0, "ma60": 10.0, "bb_upper": 1000.0, "bb_lower": 10.0, "atr": np.nan}
     for column, value in {**defaults, **indicators}.items():
         df[column] = value
     return df
@@ -248,3 +248,43 @@ def test_tick_rounding_never_crosses_current_price():
     assert resistance.price == 111.0
     assert all(lv.price <= result.close for lv in result.supports)
     assert all(lv.price >= result.close for lv in result.resistances)
+
+
+
+# ---------------------------------------------------------------------------
+# ATR 推算價位（2026-10-01：2330 創新高時上方只剩布林上軌一個價位，買點/賣點/目標價全落在同一價）
+# ---------------------------------------------------------------------------
+
+def test_atr_projection_levels_above_and_below_close():
+    result = build(make_df(atr=1.2), kind="fund")
+
+    up1 = by_source(result.resistances, "現價+1×ATR")
+    up2 = by_source(result.resistances, "現價+2×ATR")
+    down1 = by_source(result.supports, "現價-1×ATR")
+    down2 = by_source(result.supports, "現價-2×ATR")
+    assert (up1.price, up2.price, down1.price, down2.price) == (51.2, 52.4, 48.8, 47.6)
+    assert {up1.category, down2.category} == {"atr_projection"}
+    assert up1.date is None and up1.chart_price is None
+
+
+def test_level_categories():
+    high = np.full(N, 50.5)
+    high[-10] = 55.0
+    result = build(make_df(high=high, ma20=49.0, atr=1.0))
+
+    assert by_source(result.resistances, "最高").category == "high_low"
+    assert by_source(result.supports, "MA20").category == "indicator"
+
+
+def test_atr_projection_tick_rounding_direction():
+    # 現價 2510、ATR 37 → 上方 2547 進位到 2550、下方 2473 捨去到 2470（1000 元以上級距 5）
+    result = build(make_df(close=np.full(N, 2510.0), atr=37.0), kind="stock")
+
+    assert by_source(result.resistances, "現價+1×ATR").price == 2550.0
+    assert by_source(result.supports, "現價-1×ATR").price == 2470.0
+
+
+def test_no_atr_projection_when_atr_missing():
+    result = build(make_df())
+
+    assert not [lv for lv in result.supports + result.resistances if lv.category == "atr_projection"]

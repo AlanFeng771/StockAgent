@@ -17,9 +17,14 @@
 - 近 N 日最高 / 最低（N 取自 ``price_level_windows``，預設 20、60 個交易日），用 adj_high / adj_low；
   同值時取較近的那天。20 日與 60 日剛好是同一天同一價時合併為一筆，source 以「、」串接
 - 最新一日的 MA（各 ``ma_periods``）、布林上軌 / 下軌（本來就是還原價尺度，沒有原始價對照）
+- ATR 推算價位：現價 ± k × ATR（k 取自 ``atr_level_multiples``），source 如「ATR推算 現價+2×ATR」。
+  不是歷史上出現過的價位，而是依近期波動幅度推算的參考價，給「創新高、上方沒有歷史價位」或
+  停損距離需依個股波動調整時使用（實測 2330 創新高時上方只剩布林上軌，LLM 把買點、賣點、
+  目標價全放在同一價）。ATR 為 NaN 時不產生
 
 每個價位 ``PriceLevel``
 -----------------------
+- ``category``：``high_low``（近 N 日高低點）/ ``indicator``（均線、布林）/ ``atr_projection``（ATR 推算）
 - ``price``：還原價對齊升降單位後的合法掛單價（``ticks.round_to_tick``）；支撐無條件捨去、
   壓力無條件進位，確保對齊後支撐 <= 現價 <= 壓力
 - ``adjusted_price``：對齊前的還原價
@@ -43,6 +48,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Literal
 
 import pandas as pd
 from pydantic import BaseModel
@@ -54,6 +60,7 @@ from backend.app.signals.ticks import round_to_tick
 
 class PriceLevel(BaseModel):
     source: str
+    category: Literal["high_low", "indicator", "atr_projection"]
     price: float
     adjusted_price: float
     chart_price: float | None
@@ -100,8 +107,8 @@ def build_price_levels(
             return None
         return float(raw)
 
-    # (source, adjusted, chart_price, date)
-    candidates: list[tuple[str, float, float | None, date | None]] = []
+    # (source, category, adjusted, chart_price, date)
+    candidates: list[tuple[str, str, float, float | None, date | None]] = []
     flags: dict[str, bool] = {}
     for n in signal_params.price_level_windows:
         window = df.tail(n)
@@ -110,26 +117,34 @@ def build_price_levels(
             extreme = values.max() if pick == "max" else values.min()
             index = values[values == extreme].index[-1]  # 同值取較近的那天
             when = df.at[index, "date"]
-            candidates.append((f"{n}日{label}", float(extreme), chart_price_for(when, df.at[index, raw_col]), when.date()))
+            candidates.append((f"{n}日{label}", "high_low", float(extreme),
+                               chart_price_for(when, df.at[index, raw_col]), when.date()))
             flags[f"new_{'high' if pick == 'max' else 'low'}_{n}d"] = bool(last[adj_col] == extreme)
 
     for n in params.ma_periods:
-        candidates.append((f"MA{n}", float(last[f"ma{n}"]), None, None))
-    candidates.append(("布林上軌", float(last["bb_upper"]), None, None))
-    candidates.append(("布林下軌", float(last["bb_lower"]), None, None))
+        candidates.append((f"MA{n}", "indicator", float(last[f"ma{n}"]), None, None))
+    candidates.append(("布林上軌", "indicator", float(last["bb_upper"]), None, None))
+    candidates.append(("布林下軌", "indicator", float(last["bb_lower"]), None, None))
+    atr = last.get("atr")
+    if atr is not None and not pd.isna(atr):
+        for k in signal_params.atr_level_multiples:
+            label = f"{k:g}×ATR"
+            candidates.append((f"ATR推算 現價+{label}", "atr_projection", close + k * float(atr), None, None))
+            candidates.append((f"ATR推算 現價-{label}", "atr_projection", close - k * float(atr), None, None))
 
     merged: dict[tuple, list] = {}
-    for source, adjusted, chart, when in candidates:
-        key = (adjusted, chart, when)
+    for source, category, adjusted, chart, when in candidates:
+        key = (category, adjusted, chart, when)
         merged.setdefault(key, []).append(source)
 
     supports, resistances = [], []
-    for (adjusted, chart, when), sources in merged.items():
+    for (category, adjusted, chart, when), sources in merged.items():
         if pd.isna(adjusted) or adjusted == close:
             continue
         mode = "down" if adjusted < close else "up"
         level = PriceLevel(
-            source="、".join(sources), price=round_to_tick(adjusted, kind, mode), adjusted_price=adjusted,
+            source="、".join(sources), category=category, price=round_to_tick(adjusted, kind, mode),
+            adjusted_price=adjusted,
             chart_price=chart, date=when, distance_pct=pct_change(close, adjusted),
         )
         (supports if adjusted < close else resistances).append(level)

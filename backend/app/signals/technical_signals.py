@@ -13,7 +13,7 @@
 - ``stock_id`` / ``as_of``：最新交易日
 - ``snapshot``：最新交易日的數值（給 LLM 的事實）：close（原始價，對照現價用）、
   adj_close、change_pct（還原價單日漲跌%）、各均線、rsi*、k、d、macd_dif/signal/hist、
-  bb_upper/middle/lower、volume（原始量）、volume_ratio（見下方量能）
+  bb_upper/middle/lower、volume（原始量）、volume_ratio（見下方量能）、atr
 - ``signals``：已觸發的訊號清單（``Signal``），依 days_ago 遞增、同日依 name 排序
 
 交叉事件（回看最近 ``cross_lookback_days`` 個交易日，含最新交易日）
@@ -83,7 +83,7 @@ def detect_technical_signals(
 
     snapshot_columns = [
         "close", "adj_close", *(f"ma{n}" for n in params.ma_periods), *(f"rsi{n}" for n in params.rsi_periods),
-        "k", "d", "macd_dif", "macd_signal", "macd_hist", "bb_upper", "bb_middle", "bb_lower", "volume",
+        "k", "d", "macd_dif", "macd_signal", "macd_hist", "bb_upper", "bb_middle", "bb_lower", "volume", "atr",
     ]
     snapshot = {column: float(last[column]) for column in snapshot_columns}
     snapshot["change_pct"] = float((last["adj_close"] / df["adj_close"].iloc[-2] - 1) * 100)

@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 from ta.momentum import RSIIndicator
 from ta.trend import MACD
+from ta.volatility import AverageTrueRange
 
 from backend.app.indicators.technical import compute_technical
 from backend.app.signals.config import TechnicalParams
@@ -13,7 +14,7 @@ INDICATOR_COLUMNS = [
     "ma5", "ma20", "ma60", "rsi6", "rsi12", "k", "d",
     "macd_dif", "macd_signal", "macd_hist",
     "bb_middle", "bb_upper", "bb_lower",
-    "vol_ma5", "vol_ma20",
+    "vol_ma5", "vol_ma20", "atr",
 ]
 
 
@@ -196,3 +197,31 @@ def test_rsi_flat_price_is_neutral_50():
     df = compute_technical(make_adjusted([10.0] * 30))
 
     assert df["rsi12"].iloc[-1] == pytest.approx(50.0)
+
+
+# ---------------------------------------------------------------------------
+# ATR（Wilder，以 ta 套件為獨立參考）
+# ---------------------------------------------------------------------------
+
+def test_atr_matches_wilder_reference():
+    rng = np.random.default_rng(5)
+    closes = random_walk(120, seed=5)
+    highs = closes + rng.uniform(0.1, 2.0, 120)
+    lows = closes - rng.uniform(0.1, 2.0, 120)
+    df = compute_technical(make_adjusted(closes, highs=highs, lows=lows))
+
+    expected = AverageTrueRange(pd.Series(highs), pd.Series(lows), pd.Series(closes), window=14).average_true_range()
+    assert df["atr"].iloc[:13].isna().all()  # ta 在這段填 0，本專案用 NaN 表示資料不足
+    np.testing.assert_allclose(df["atr"].iloc[13:], expected.iloc[13:], rtol=1e-9)
+
+
+def test_atr_uses_gap_from_previous_close():
+    # 跳空：前收 10、今天 高12 低11 → TR = 12 − 10 = 2（不是 高−低 = 1）
+    closes = [10.0] * 14 + [11.5]
+    highs = [10.5] * 14 + [12.0]
+    lows = [9.5] * 14 + [11.0]
+    df = compute_technical(make_adjusted(closes, highs=highs, lows=lows), TechnicalParams(atr_period=14))
+
+    # 前 14 筆 TR 皆為 1 → 第14筆 ATR = 1；第15筆 = (1×13 + 2) / 14
+    assert df["atr"].iloc[13] == pytest.approx(1.0)
+    assert df["atr"].iloc[14] == pytest.approx((13 + 2) / 14)

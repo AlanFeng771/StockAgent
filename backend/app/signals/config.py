@@ -30,6 +30,8 @@
 - MACD 12 / 26 / 9
 - 布林通道 20 日 ± 2 倍標準差
 - 均量 5 / 20 日
+- ATR 14（Wilder：首值為前 14 筆 TR 簡單平均，之後 (前ATR×13 + TR) / 14；TR 含與前收的跳空），
+  用於推算波動參考價位（2026-10-01 使用者確認 A 方案：創新高時上方沒有歷史價位可用）
 - 指標一律以還原價計算（2026-10-01 使用者確認）。與看盤App（原始價）對照：用原始價
   重算時 2330 的 MA20/MA60/KD/RSI6/RSI12/MACD 與App一致，差異完全來自還原價。
   App 上標示「MACD」的數值對應本專案的 ``macd_signal``
@@ -65,6 +67,7 @@
 彙整（signal_builder）
 - 新聞最多保留 ``news_max_items``（20）則最新標題給 LLM，控制 prompt 長度
 - 支撐壓力取近 ``price_level_windows``（20、60）個交易日的最高/最低（2026-10-01 使用者確認）
+- ATR 推算價位：現價 ± k × ATR，k 取自 ``atr_level_multiples``（1、2）
 - 標題含 ``news_excluded_title_markers`` 任一字串的新聞排除（預設論壇「股市爆料同學會」：
   實測 2330 七天 183 則中 93 則是論壇貼文，部分與公司無關）
 """
@@ -97,6 +100,7 @@ class TechnicalParams:
     bollinger_period: int = 20
     bollinger_std: float = 2.0
     volume_ma_periods: tuple[int, ...] = (5, 20)
+    atr_period: int = 14
 
     # EMA 類指標（MACD、RSI 的 Wilder 平滑）需要暖機：初始值的權重經過 N 筆後
     # 剩 (1-α)^N。取 3 倍週期時，EMA26（α=2/27）的初始值權重約 0.25%，可忽略
@@ -110,6 +114,7 @@ class TechnicalParams:
             max(self.volume_ma_periods),
             self.kd_period * self.ema_warmup_multiplier,
             max(self.rsi_periods) * self.ema_warmup_multiplier,
+            self.atr_period * self.ema_warmup_multiplier,
             self.macd_slow * self.ema_warmup_multiplier + self.macd_signal,
         )
 
@@ -137,6 +142,7 @@ class SignalParams:
     per_min_days: int = 60
     news_max_items: int = 20
     price_level_windows: tuple[int, ...] = (20, 60)
+    atr_level_multiples: tuple[float, ...] = (1.0, 2.0)
     news_excluded_title_markers: tuple[str, ...] = ("股市爆料同學會",)
 
 

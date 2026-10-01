@@ -23,7 +23,7 @@ def make_frame(rows: int = ROWS, **overrides) -> pd.DataFrame:
         "rsi6": 50.0, "rsi12": 50.0, "k": 50.0, "d": 50.0,
         "macd_dif": 0.0, "macd_signal": 0.0, "macd_hist": 0.0,
         "bb_middle": 100.0, "bb_upper": 110.0, "bb_lower": 90.0,
-        "vol_ma5": 1000.0, "vol_ma20": 1000.0,
+        "vol_ma5": 1000.0, "vol_ma20": 1000.0, "atr": 2.0,
     })
     for column, values in overrides.items():
         df.loc[df.index[-len(values):], column] = values
@@ -57,7 +57,7 @@ def test_neutral_frame_has_no_signals_and_full_snapshot():
     for key in [
         "close", "adj_close", "change_pct", "ma5", "ma20", "ma60", "rsi6", "rsi12", "k", "d",
         "macd_dif", "macd_signal", "macd_hist", "bb_upper", "bb_middle", "bb_lower",
-        "volume", "volume_ratio",
+        "volume", "volume_ratio", "atr",
     ]:
         assert key in result.snapshot
     assert result.snapshot["close"] == 1000.0  # 原始價

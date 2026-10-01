@@ -28,7 +28,7 @@ LLM 也無法開啟；連結仍保留在 StockSignals 供網頁顯示），以�
   - 報告中**不在允許清單內的價格**（允許：price_levels 各價位的 price、chart_price、
     現價 close、填息價 fill_price；比較到小數 2 位）；沒有 price_levels 卻給了價格也列入
   - 價格關係：有買點卻沒停損（且買點下方有支撐可用）、想持有卻沒目標價（且上方有壓力可用）、
-    停損價 >= 最低買點、目標價 <= 現價或 <= 最高買點、賣點 <= 現價（跌破出場屬於停損）
+    停損價 >= 最低買點、目標價 <= 現價或 <= 最高買點、賣點 <= 現價（跌破出場屬於停損）或 <= 最高買點
 - ``model`` / ``prompt_version``：使用的模型與 prompt 版本（可追溯）
 - ``prompt_tokens`` / ``completion_tokens``：API 回傳的用量，沒有時為 None
 """
@@ -160,4 +160,6 @@ def _relationship_warnings(report: StockReport, levels) -> list[str]:
     for p in report.exit_points:
         if p.price <= close:
             warnings.append(f"賣點 {p.price}（{p.basis}）不高於現價 {close}；跌破出場應放在停損價")
+        elif entries and p.price <= max(entries):
+            warnings.append(f"賣點 {p.price}（{p.basis}）不高於最高買點 {max(entries)}")
     return warnings

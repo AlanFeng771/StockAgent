@@ -267,3 +267,17 @@ def test_no_entry_and_not_recommended_does_not_require_target_or_stop(signals):
 
 def test_reason_fields_exist_in_schema():
     assert {"target_price_reason", "stop_loss_reason"} <= set(StockReport.model_fields)
+
+
+def test_exit_not_above_highest_entry_warns(signals):
+    # 實測 2330：買點、賣點都是 2530（同一價），原本只檢查賣點 > 現價而漏掉
+    close, supports, resistances = levels_of(signals)
+    entry = resistances[0]
+    report = make_report(
+        signals, entry_price=entry, stop_loss=point(supports[0]), target_price=None,
+        exit_points=[point(entry)],
+    )
+
+    warnings = generate_report(signals, client=FakeClient(parsed=report), settings=settings()).warnings
+
+    assert any("賣點" in w and "不高於最高買點" in w for w in warnings)

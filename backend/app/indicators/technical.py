@@ -29,6 +29,10 @@ adj_volume 計算；**一律用還原價**，避免除權息、面額變更造�
 - ``bb_middle`` = 收盤 period 日均線；``bb_upper`` / ``bb_lower`` = middle ± k × 標準差
   （母體標準差 ddof=0，依 Bollinger 原始定義）
 - ``vol_ma{n}``：成交量（adj_volume）n 日均量，n 取自 ``params.volume_ma_periods``
+- ``atr``：平均真實波幅，Wilder 算法（與 ``ta`` 套件一致）：
+    TR = max(高−低, |高−前收|, |低−前收|)，第一筆沒有前收時 TR = 高−低
+    第 period 筆 ATR = 前 period 筆 TR 的簡單平均；之後 ATR = (前ATR × (period−1) + TR) / period
+    之前的列為 NaN（``ta`` 填 0，本專案以 NaN 表示資料不足）
 """
 
 from __future__ import annotations
@@ -62,7 +66,21 @@ def compute_technical(prices: pd.DataFrame, params: TechnicalParams = TECHNICAL)
 
     for n in params.volume_ma_periods:
         out[f"vol_ma{n}"] = volume.rolling(n).mean()
+    out["atr"] = _atr(high, low, close, params.atr_period)
     return out
+
+
+def _atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int) -> pd.Series:
+    previous_close = close.shift(1)
+    true_range = pd.concat(
+        [high - low, (high - previous_close).abs(), (low - previous_close).abs()], axis=1,
+    ).max(axis=1)
+    values = [np.nan] * len(true_range)
+    if len(true_range) >= period:
+        values[period - 1] = true_range.iloc[:period].mean()
+        for i in range(period, len(true_range)):
+            values[i] = (values[i - 1] * (period - 1) + true_range.iloc[i]) / period
+    return pd.Series(values, index=close.index, dtype=float)
 
 
 def _ema(series: pd.Series, period: int) -> pd.Series:

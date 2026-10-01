@@ -56,3 +56,8 @@ def test_rsi_thresholds_cover_every_rsi_period():
 def test_month_revenue_lookback_allows_long_streaks():
     # 實測 2330 營收年增連續 25 個月以上；15 個月資料只能量到 3 個月。月營收不論區間長短都只算 1 次 API
     assert LOOKBACK.month_revenue >= 36 * 30
+
+
+def test_atr_period_default_and_counted_in_required_rows():
+    assert TECHNICAL.atr_period == 14
+    assert TechnicalParams(atr_period=40).required_price_rows() >= 40 * 3 + 1
