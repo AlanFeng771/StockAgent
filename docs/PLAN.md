@@ -53,7 +53,8 @@ StockAgent/
 │   │   ├── main.py                # FastAPI入口 + APScheduler啟動(lifespan)
 │   │   ├── config.py              # pydantic-settings讀.env
 │   │   ├── data_sources/
-│   │   │   └── finmind_client.py  # 封裝FinMind SDK，每dataset一個method，含快取
+│   │   │   ├── finmind_client.py  # 封裝FinMind SDK，每dataset一個method
+│   │   │   └── cache.py           # FinMind原始回應的本機檔案快取
 │   │   ├── indicators/
 │   │   │   ├── price_adjust.py    # 用除權息/面額變更自行計算還原股價（FinMind還原股價為付費限定）
 │   │   │   ├── technical.py       # MA/MACD/KD/RSI/布林通道/量能（輸入為還原股價）
@@ -86,6 +87,7 @@ StockAgent/
 │   │   └── analyze_one.py         # Stage3/4用：CLI單股驗證腳本
 │   └── tests/
 │       ├── test_finmind_client.py
+│       ├── test_finmind_cache.py
 │       ├── test_price_adjust.py
 │       ├── test_indicators_technical.py
 │       ├── test_indicators_chip.py
@@ -268,6 +270,17 @@ DATABASE_URL=sqlite:///./data/stockagent.db
   - [x] `uv run pytest` 全過（38 passed）
   - [x] `explore_finmind.py` 對新dataset實測，欄位/型別與規格一致
 
+#### Stage 1 快取（2026-10-01 使用者決定實作）✅ 已完成
+- **規格**（詳見 `data_sources/cache.py` docstring）：
+  - `FinMindClient(cache=FinMindCache(...))` 注入，不帶則不快取
+  - 快取鍵＝dataset＋呼叫參數；存SDK原始回應（正規化前），pickle 存於 `data/cache/`
+  - 查詢區間結束日 <= 今天 − `final_after_days`（預設3天）→ 視為已定案歷史資料，永久有效；否則 `ttl_seconds`（預設1小時）內有效
+  - 例外不快取；空結果要快取（假日無新聞是有效結果）；快取檔損毀視為未命中並刪除
+- **效益來源**：價格/法人等「一次呼叫可查任意區間」的dataset，當日首跑仍需呼叫（最新幾天未定案），省的是**重跑**；新聞逐日呼叫，已定案的日子永久命中，首跑也省
+- **驗收**：
+  - [x] `uv run pytest` 全過（52 passed）
+  - [x] 真實API實測：同一組查詢（股價/法人/除權息/7天新聞）首跑 10 次呼叫，重跑 0 次、結果一致
+
 ### Stage 2：規則訊號層（技術／籌碼／基本面）
 - **規格**：逐一定義每個指標/訊號函式的輸入輸出與邊界，例如「MA5從下方穿越到上方MA20的當天才算golden_cross=true，持平不算、資料不足回傳None」；所有門檻值集中寫入 `signals/config.py`
   - **還原股價**（`indicators/price_adjust.py`）：每個除權息/面額變更事件的調整係數 = `參考價 / 前一日收盤價`（除權息用 `reference_price/before_price`，面額變更用 `after_price/before_price`），事件日**之前**的 OHLC 全部乘上係數（多事件連乘）；**最新一筆必等於原始價**。技術指標一律吃還原價；買賣點等「價位」與顯示用原始價
@@ -363,12 +376,11 @@ DATABASE_URL=sqlite:///./data/stockagent.db
 
 ## 開發時需要確認/拍板的細節（非阻塞，於對應 Stage 處理）
 
-- FinMind 各 dataset 確切名稱/欄位 → Stage1 已驗證；呼叫額度依官方 quickstart：匿名 300 次/小時、註冊帶token 600 次/小時；使用者帳號實際上限待用 token 跑 explore 腳本確認（`/v2/user_info` 的 `api_request_limit`）。每次全清單分析約 (7 + 新聞天數) × 股票數 + 1 次呼叫，600/hr 下 MVP 先不做快取
+- FinMind 各 dataset 確切名稱/欄位 → Stage1 已驗證；呼叫額度依官方 quickstart：匿名 300 次/小時、註冊帶token 600 次/小時；使用者帳號實際上限待用 token 跑 explore 腳本確認（`/v2/user_info` 的 `api_request_limit`）。每次全清單分析約 (7 + 新聞天數) × 股票數 + 1 次呼叫；快取已實作（見 Stage 1 快取）
 - 新聞相關性篩選方式（FinMind是否支援用stock_id查詢消息面）→ Stage1驗證後定案
 - 技術指標參數預設值（MA5/20/60、RSI14、KD9、MACD12/26/9、布林20±2σ）沿用業界慣例，籌碼/基本面門檻（連續買超天數、YoY成長%等）→ Stage2與使用者一起拍板
 - 各dataset每日實際更新時間 → 隨 Stage 6 延後；恢復時連續幾天於不同時段跑 explore 腳本實測，據以決定排程時間與重試截止時間
 - 減資事件的還原 → 找到有減資紀錄的股票、驗證真實欄位後補進 Stage1 client 與 Stage2 還原邏輯
-- FinMind 快取 → 待 Stage2 回溯期間拍板後一併設計（新聞逐日呼叫最耗額度）
 - CRUD對重複/不存在資料的行為（新增重複股票、刪除不存在股票）→ Stage5定案並寫入規格
 - 股票清單輸入先走「前端表單逐一新增」，之後有需要再加CSV匯入
 - 報告重跑策略先採「同日覆蓋」，不做版本歷史

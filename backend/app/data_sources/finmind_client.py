@@ -14,6 +14,8 @@ method，統一回傳欄位已正規化（snake_case、型別轉換）的 ``pand
 - ``api_token``：FinMind API token；為 ``None`` 時以未登入（公開額度）呼叫。
 - ``loader``：注入用的 ``DataLoader`` 實例，供測試以假物件替換；不帶時會自行建立
   ``DataLoader()`` 並在有 token 時呼叫 ``login_by_token``。
+- ``cache``：``FinMindCache`` 實例（見 ``cache.py``）；不帶時每次都打 API。
+  只快取成功的回應，例外不快取。
 
 各 method 輸入輸出 contract
 ---------------------------
@@ -125,6 +127,8 @@ import re
 import pandas as pd
 from FinMind.data import DataLoader
 
+from backend.app.data_sources.cache import FinMindCache
+
 
 class FinMindClientError(Exception):
     """所有 FinMindClient 例外的共同基底類別。"""
@@ -201,15 +205,21 @@ _TRADING_DATES_COLUMNS = ["date"]
 
 
 class FinMindClient:
-    def __init__(self, api_token: str | None = None, loader: DataLoader | None = None) -> None:
+    def __init__(
+        self,
+        api_token: str | None = None,
+        loader: DataLoader | None = None,
+        cache: FinMindCache | None = None,
+    ) -> None:
         self._loader = loader if loader is not None else DataLoader()
+        self._cache = cache
         if loader is None and api_token:
             try:
                 self._loader.login_by_token(api_token)
             except Exception as exc:
                 raise _classify_error(exc) from exc
 
-    def _call(self, dataset_fn, columns: list[str], **kwargs) -> pd.DataFrame:
+    def _call(self, dataset: str, columns: list[str], **kwargs) -> pd.DataFrame:
         """呼叫底層 FinMind SDK method，並把裸 Exception 轉成分類過的例外。
 
         SDK 對非200回應或缺少 "data" 欄位的異常回應，一律只會丟出訊息裡帶有
@@ -217,12 +227,16 @@ class FinMindClient:
         的 ``request_get`` 與 FinMind/data/finmind_api.py 的 ``_extract_data``）
         ，本function依訊息內容重新分類成本模組定義的例外類別。
         """
-        try:
-            df = dataset_fn(**kwargs)
-        except FinMindClientError:
-            raise
-        except Exception as exc:
-            raise _classify_error(exc) from exc
+        df = self._cache.get(dataset, kwargs) if self._cache is not None else None
+        if df is None:
+            try:
+                df = getattr(self._loader, dataset)(**kwargs)
+            except FinMindClientError:
+                raise
+            except Exception as exc:
+                raise _classify_error(exc) from exc
+            if self._cache is not None:
+                self._cache.set(dataset, kwargs, df if df is not None else pd.DataFrame())
 
         if df is None or df.empty:
             return pd.DataFrame(columns=columns)
@@ -230,7 +244,7 @@ class FinMindClient:
 
     def get_price(self, stock_id: str, start_date: str, end_date: str) -> pd.DataFrame:
         df = self._call(
-            self._loader.taiwan_stock_daily,
+            "taiwan_stock_daily",
             _PRICE_COLUMNS,
             stock_id=stock_id, start_date=start_date, end_date=end_date,
         )
@@ -248,7 +262,7 @@ class FinMindClient:
 
     def get_institutional_investors(self, stock_id: str, start_date: str, end_date: str) -> pd.DataFrame:
         df = self._call(
-            self._loader.taiwan_stock_institutional_investors,
+            "taiwan_stock_institutional_investors",
             _INSTITUTIONAL_INVESTORS_COLUMNS,
             stock_id=stock_id, start_date=start_date, end_date=end_date,
         )
@@ -261,7 +275,7 @@ class FinMindClient:
 
     def get_margin_trading(self, stock_id: str, start_date: str, end_date: str) -> pd.DataFrame:
         df = self._call(
-            self._loader.taiwan_stock_margin_purchase_short_sale,
+            "taiwan_stock_margin_purchase_short_sale",
             _MARGIN_TRADING_COLUMNS,
             stock_id=stock_id, start_date=start_date, end_date=end_date,
         )
@@ -288,7 +302,7 @@ class FinMindClient:
 
     def get_financial_statement(self, stock_id: str, start_date: str, end_date: str) -> pd.DataFrame:
         df = self._call(
-            self._loader.taiwan_stock_financial_statement,
+            "taiwan_stock_financial_statement",
             _FINANCIAL_STATEMENT_COLUMNS,
             stock_id=stock_id, start_date=start_date, end_date=end_date,
         )
@@ -299,7 +313,7 @@ class FinMindClient:
 
     def get_month_revenue(self, stock_id: str, start_date: str, end_date: str) -> pd.DataFrame:
         df = self._call(
-            self._loader.taiwan_stock_month_revenue,
+            "taiwan_stock_month_revenue",
             _MONTH_REVENUE_COLUMNS,
             stock_id=stock_id, start_date=start_date, end_date=end_date,
         )
@@ -319,7 +333,7 @@ class FinMindClient:
         for day in pd.date_range(start_date, range_end):
             day_str = day.strftime("%Y-%m-%d")
             df = self._call(
-                self._loader.taiwan_stock_news,
+                "taiwan_stock_news",
                 _NEWS_COLUMNS,
                 stock_id=stock_id, start_date=day_str,
             )
@@ -334,7 +348,7 @@ class FinMindClient:
 
     def get_valuation_ratios(self, stock_id: str, start_date: str, end_date: str) -> pd.DataFrame:
         df = self._call(
-            self._loader.taiwan_stock_per_pbr,
+            "taiwan_stock_per_pbr",
             _VALUATION_RATIOS_COLUMNS,
             stock_id=stock_id, start_date=start_date, end_date=end_date,
         )
@@ -346,7 +360,7 @@ class FinMindClient:
 
     def get_dividend_result(self, stock_id: str, start_date: str, end_date: str) -> pd.DataFrame:
         df = self._call(
-            self._loader.taiwan_stock_dividend_result,
+            "taiwan_stock_dividend_result",
             _DIVIDEND_RESULT_COLUMNS,
             stock_id=stock_id, start_date=start_date, end_date=end_date,
         )
@@ -362,7 +376,7 @@ class FinMindClient:
     def get_split_price(self, start_date: str, end_date: str) -> pd.DataFrame:
         """全市場查詢（底層SDK不接受stock_id），呼叫端自行依stock_id篩選。"""
         df = self._call(
-            self._loader.taiwan_stock_split_price,
+            "taiwan_stock_split_price",
             _SPLIT_PRICE_COLUMNS,
             start_date=start_date, end_date=end_date,
         )
@@ -373,7 +387,7 @@ class FinMindClient:
 
     def get_trading_dates(self, start_date: str, end_date: str) -> pd.DataFrame:
         df = self._call(
-            self._loader.taiwan_stock_trading_date,
+            "taiwan_stock_trading_date",
             _TRADING_DATES_COLUMNS,
             start_date=start_date, end_date=end_date,
         )
