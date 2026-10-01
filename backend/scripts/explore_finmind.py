@@ -40,7 +40,11 @@ def main() -> None:
     if token:
         loader = DataLoader()
         loader.login_by_token(token)
-        print(f"\n===== API額度 =====\n  已用: {loader.api_usage}  上限: {loader.api_usage_limit}")
+        limit = loader.api_usage_limit
+        print(f"\n===== API額度 =====\n  已用: {loader.api_usage}  上限: {limit}")
+        if not limit:
+            # 無效token時 user_info 回 HTTP 200 + 內文 status 400，SDK 只會回 0，不會報錯
+            print("  ⚠ 上限為0，token 很可能無效（例如仍是 .env.example 的範例值），請檢查 .env")
     else:
         print("\n===== API額度 =====\n  未設定 FINMIND_API_TOKEN，無法查詢額度")
 
