@@ -4,12 +4,20 @@ from types import SimpleNamespace
 
 import pandas as pd
 import pytest
+import requests
 
+from backend.app.data_sources import finmind_client as finmind_client_module
 from backend.app.data_sources.finmind_client import (
     FinMindAPIError,
     FinMindAuthError,
     FinMindClient,
     FinMindQuotaExceededError,
+    FinMindSponsorRequiredError,
+)
+
+SPONSOR_MESSAGE = (
+    "FinMind API unexpected response: Your level is free. Please update your user level. "
+    "Detail information:https://finmindtrade.com/analysis/#/Sponsor/sponsor"
 )
 
 
@@ -17,6 +25,59 @@ def make_client(**loader_methods) -> FinMindClient:
     """用 SimpleNamespace 當假的 DataLoader，只掛上測試需要的 method。"""
     loader = SimpleNamespace(**loader_methods)
     return FinMindClient(loader=loader)
+
+
+# ---------------------------------------------------------------------------
+# 建構子 / login
+# ---------------------------------------------------------------------------
+
+def patch_data_loader(monkeypatch, login_behavior):
+    """把模組內的 DataLoader 換成假類別，login_by_token 行為由 login_behavior 決定。"""
+    calls = []
+
+    class FakeDataLoader:
+        def login_by_token(self, api_token):
+            calls.append(api_token)
+            login_behavior()
+
+    monkeypatch.setattr(finmind_client_module, "DataLoader", FakeDataLoader)
+    return calls
+
+
+def test_constructor_logs_in_with_token(monkeypatch):
+    calls = patch_data_loader(monkeypatch, lambda: True)
+
+    FinMindClient(api_token="my-token")
+
+    assert calls == ["my-token"]
+
+
+def test_constructor_without_token_does_not_log_in(monkeypatch):
+    calls = patch_data_loader(monkeypatch, lambda: True)
+
+    FinMindClient()
+
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    "error, expected_exception",
+    [
+        # SDK login_by_token 失敗時是 raise Exception(str(resp))，訊息形如 "<Response [401]>"
+        (Exception("<Response [401]>"), FinMindAuthError),
+        (Exception("<Response [403]>"), FinMindAuthError),
+        (Exception("<Response [500]>"), FinMindAPIError),
+        (requests.ConnectionError("network down"), FinMindAPIError),
+    ],
+)
+def test_constructor_classifies_login_errors(monkeypatch, error, expected_exception):
+    def fail():
+        raise error
+
+    patch_data_loader(monkeypatch, fail)
+
+    with pytest.raises(expected_exception):
+        FinMindClient(api_token="bad-token")
 
 
 # ---------------------------------------------------------------------------
@@ -69,6 +130,10 @@ def test_get_price_empty_response_returns_empty_dataframe_with_expected_columns(
         ("Final response status: 403, text: forbidden", FinMindAuthError),
         ("FinMind API unexpected response: something odd", FinMindAPIError),
         ("Final response status: 500, text: server error", FinMindAPIError),
+        # 只能依狀態碼分類，回應內文裡出現的數字（股票代號、日期）不可誤判
+        ("Final response status: 500, text: stock_id 2402 failed", FinMindAPIError),
+        ("Final response status: 500, text: 4010 not found", FinMindAPIError),
+        (SPONSOR_MESSAGE, FinMindSponsorRequiredError),
     ],
 )
 def test_get_price_classifies_sdk_errors(message, expected_exception):
@@ -290,3 +355,128 @@ def test_get_valuation_ratios_empty_response_returns_empty_dataframe_with_expect
 
     assert df.empty
     assert list(df.columns) == ["date", "stock_id", "pe_ratio", "pb_ratio", "dividend_yield"]
+
+
+# ---------------------------------------------------------------------------
+# get_dividend_result（除權息結果，供自行計算還原股價）
+# ---------------------------------------------------------------------------
+
+def test_get_dividend_result_normal_response_renames_columns():
+    # 欄位與數值取自真實API（2330 於 2026-09-16 除息7元）
+    raw = pd.DataFrame([{
+        "date": "2026-09-16", "stock_id": "2330",
+        "before_price": 2385.0, "after_price": 2377.99,
+        "stock_and_cache_dividend": 7.000001, "stock_or_cache_dividend": "息",
+        "max_price": 2615.0, "min_price": 2145.0, "open_price": 2380.0,
+        "reference_price": 2377.99,
+    }])
+    calls = []
+
+    def fake(**kwargs):
+        calls.append(kwargs)
+        return raw
+
+    client = make_client(taiwan_stock_dividend_result=fake)
+
+    df = client.get_dividend_result("2330", "2026-01-01", "2026-09-30")
+
+    assert calls == [{"stock_id": "2330", "start_date": "2026-01-01", "end_date": "2026-09-30"}]
+    assert list(df.columns) == [
+        "date", "stock_id", "before_price", "reference_price", "dividend", "dividend_type",
+    ]
+    row = df.iloc[0]
+    assert row["before_price"] == 2385.0
+    assert row["reference_price"] == 2377.99
+    assert row["dividend"] == 7.000001
+    assert row["dividend_type"] == "息"
+    assert pd.api.types.is_datetime64_any_dtype(df["date"])
+
+
+def test_get_dividend_result_empty_response_returns_empty_dataframe_with_expected_columns():
+    client = make_client(taiwan_stock_dividend_result=lambda **kwargs: pd.DataFrame())
+
+    df = client.get_dividend_result("2330", "2026-01-01", "2026-09-30")
+
+    assert df.empty
+    assert list(df.columns) == [
+        "date", "stock_id", "before_price", "reference_price", "dividend", "dividend_type",
+    ]
+
+
+# ---------------------------------------------------------------------------
+# get_split_price（面額變更/分割，全市場查詢）
+# ---------------------------------------------------------------------------
+
+def test_get_split_price_queries_whole_market_and_keeps_expected_columns():
+    # 欄位與數值取自真實API（6763 於 2024-09-09 面額變更）
+    raw = pd.DataFrame([{
+        "date": "2024-09-09", "stock_id": "6763", "type": "面額變更",
+        "before_price": 491.0, "after_price": 49.10,
+        "max_price": 54.0, "min_price": 44.2, "open_price": 49.1,
+    }])
+    calls = []
+
+    def fake(**kwargs):
+        calls.append(kwargs)
+        return raw
+
+    client = make_client(taiwan_stock_split_price=fake)
+
+    df = client.get_split_price("2024-01-01", "2026-09-30")
+
+    assert calls == [{"start_date": "2024-01-01", "end_date": "2026-09-30"}]
+    assert list(df.columns) == ["date", "stock_id", "type", "before_price", "after_price"]
+    assert df.iloc[0]["after_price"] == 49.10
+    assert pd.api.types.is_datetime64_any_dtype(df["date"])
+
+
+def test_get_split_price_empty_response_returns_empty_dataframe_with_expected_columns():
+    client = make_client(taiwan_stock_split_price=lambda **kwargs: pd.DataFrame())
+
+    df = client.get_split_price("2024-01-01", "2026-09-30")
+
+    assert df.empty
+    assert list(df.columns) == ["date", "stock_id", "type", "before_price", "after_price"]
+
+
+# ---------------------------------------------------------------------------
+# get_trading_dates（台股交易日曆）
+# ---------------------------------------------------------------------------
+
+def test_get_trading_dates_normal_response_returns_sorted_datetime_column():
+    # 真實API：2026-10-09（週五，國慶補假）不在交易日清單內
+    raw = pd.DataFrame({"date": ["2026-10-12", "2026-10-08", "2026-10-07"]})
+    calls = []
+
+    def fake(**kwargs):
+        calls.append(kwargs)
+        return raw
+
+    client = make_client(taiwan_stock_trading_date=fake)
+
+    df = client.get_trading_dates("2026-10-01", "2026-10-15")
+
+    assert calls == [{"start_date": "2026-10-01", "end_date": "2026-10-15"}]
+    assert list(df.columns) == ["date"]
+    assert pd.api.types.is_datetime64_any_dtype(df["date"])
+    assert list(df["date"].dt.strftime("%Y-%m-%d")) == ["2026-10-07", "2026-10-08", "2026-10-12"]
+
+
+def test_get_trading_dates_empty_response_returns_empty_dataframe_with_expected_columns():
+    """超出FinMind已公布範圍（例如實測10月時查隔年）會回傳空資料，不是錯誤。"""
+    client = make_client(taiwan_stock_trading_date=lambda **kwargs: pd.DataFrame())
+
+    df = client.get_trading_dates("2027-01-01", "2027-03-01")
+
+    assert df.empty
+    assert list(df.columns) == ["date"]
+
+
+def test_new_methods_raise_sponsor_required_error():
+    def raise_sponsor(**kwargs):
+        raise Exception(SPONSOR_MESSAGE)
+
+    client = make_client(taiwan_stock_dividend_result=raise_sponsor)
+
+    with pytest.raises(FinMindSponsorRequiredError):
+        client.get_dividend_result("2330", "2026-01-01", "2026-09-30")

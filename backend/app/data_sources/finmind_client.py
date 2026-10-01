@@ -66,6 +66,33 @@ FinMind API 的日期格式。
   欄位：date, stock_id, pe_ratio(float，原始PER), pb_ratio(float，原始PBR),
   dividend_yield(float)
 
+以下三個dataset供「自行計算還原股價」與「交易日判斷」使用。FinMind的
+``taiwan_stock_daily_adj``（還原股價）實測為sponsor付費限定，免費方案
+改由除權息結果＋面額變更自行還原（調整係數 = 參考價 / 前一日收盤價）。
+
+- ``get_dividend_result(stock_id, start_date, end_date) -> DataFrame``
+  欄位：date, stock_id, before_price(float，除權息前收盤價),
+  reference_price(float，減除股利參考價，用來計算調整係數),
+  dividend(float，原始stock_and_cache_dividend，權息值),
+  dividend_type(str，原始stock_or_cache_dividend，"權"/"息")
+  （原始欄位after_price依SDK說明為「除權息後收盤價」，語意上不是調整
+  基準，故不輸出；實測0056歷次資料after_price與reference_price相同）
+
+- ``get_split_price(start_date, end_date) -> DataFrame``
+  欄位：date, stock_id, type(str，如"面額變更"), before_price(float),
+  after_price(float，分割後參考價)
+  **全市場查詢**：底層SDK不接受stock_id，一次回傳期間內所有股票的分割
+  事件，呼叫端自行依stock_id篩選；同一天只需呼叫一次即可供所有股票共用。
+
+- ``get_trading_dates(start_date, end_date) -> DataFrame``
+  欄位：date(datetime64)，依日期遞增排序，只列出開市日。
+  實測FinMind只公布到當年底（2026-10查2027回傳空資料），超出已公布範圍
+  時回傳空DataFrame，呼叫端需自行退回備援規則。
+
+尚未納入：減資（``taiwan_stock_capital_reduction_reference_price``）。
+單股查詢免費但尚未找到有減資紀錄的股票驗證真實欄位、全市場查詢需sponsor，
+待驗證後再補。
+
 錯誤情境 contract（依官方SDK原始碼 ``FinMind/utility/request.py`` 與
 ``FinMind/data/finmind_api.py`` 的行為歸納，見程式內 ``_call`` 的docstring）
 --------------------------------------------------------------------------
@@ -75,16 +102,25 @@ FinMind API 的日期格式。
   ``df["close"]`` 等欄位）。
 - API 回應 HTTP 非200（例如 token 無效 401/403、額度超過 402）：SDK 底層
   會丟出內容為 ``f"Final response status: {code}, text: {text}"`` 的裸
-  ``Exception``。本client攔截後依狀態碼轉成：
+  ``Exception``。本client攔截後**只依訊息中的狀態碼**（不是整段訊息的
+  子字串，避免回應內文中的股票代號/日期如"2402"被誤判）轉成：
     - 402 → ``FinMindQuotaExceededError``
     - 401 或 403 → ``FinMindAuthError``
     - 其他 → ``FinMindAPIError``（catch-all）
-- API 回 HTTP 200 但JSON沒有 ``data`` 欄位（格式異常）：SDK會丟出內容為
+- 免費帳號呼叫付費dataset：API 回 HTTP 200、JSON沒有 ``data``，訊息為
+  「Your level is free. Please update your user level. ...」（實測
+  taiwan_stock_daily_adj），轉成 ``FinMindSponsorRequiredError``。
+- API 回 HTTP 200 但JSON沒有 ``data`` 欄位（其他格式異常）：SDK會丟出內容為
   ``f"FinMind API unexpected response: {msg}"`` 的裸 ``Exception``，本
   client一律轉成 ``FinMindAPIError``。
+- 建構子 ``login_by_token`` 失敗：SDK丟出 ``Exception(str(resp))``，訊息形如
+  ``"<Response [401]>"``，依同一套狀態碼規則分類；網路錯誤等沒有狀態碼的
+  例外轉成 ``FinMindAPIError``。建構子不會丟出未分類的裸例外。
 """
 
 from __future__ import annotations
+
+import re
 
 import pandas as pd
 from FinMind.data import DataLoader
@@ -102,8 +138,37 @@ class FinMindQuotaExceededError(FinMindClientError):
     """API 呼叫額度已用盡（HTTP 402）。"""
 
 
+class FinMindSponsorRequiredError(FinMindClientError):
+    """免費帳號呼叫了 sponsor 付費限定的 dataset。"""
+
+
 class FinMindAPIError(FinMindClientError):
     """其他無法分類的 FinMind API 錯誤（catch-all）。"""
+
+
+# SDK request_get 的 "Final response status: 402, ..." 與 login_by_token 的 "<Response [401]>"
+_STATUS_CODE_PATTERNS = (
+    re.compile(r"Final response status: (\d{3})"),
+    re.compile(r"<Response \[(\d{3})\]>"),
+)
+_SPONSOR_REQUIRED_MARKER = "update your user level"
+
+
+def _classify_error(exc: Exception) -> FinMindClientError:
+    """把 SDK 丟出的裸例外依狀態碼/訊息轉成本模組的例外類別。"""
+    message = str(exc)
+    if _SPONSOR_REQUIRED_MARKER in message:
+        return FinMindSponsorRequiredError(message)
+    for pattern in _STATUS_CODE_PATTERNS:
+        match = pattern.search(message)
+        if match:
+            status = match.group(1)
+            if status == "402":
+                return FinMindQuotaExceededError(message)
+            if status in ("401", "403"):
+                return FinMindAuthError(message)
+            break
+    return FinMindAPIError(message)
 
 
 _PRICE_COLUMNS = [
@@ -128,13 +193,21 @@ _MONTH_REVENUE_COLUMNS = [
 ]
 _NEWS_COLUMNS = ["date", "stock_id", "title", "link", "source"]
 _VALUATION_RATIOS_COLUMNS = ["date", "stock_id", "pe_ratio", "pb_ratio", "dividend_yield"]
+_DIVIDEND_RESULT_COLUMNS = [
+    "date", "stock_id", "before_price", "reference_price", "dividend", "dividend_type",
+]
+_SPLIT_PRICE_COLUMNS = ["date", "stock_id", "type", "before_price", "after_price"]
+_TRADING_DATES_COLUMNS = ["date"]
 
 
 class FinMindClient:
     def __init__(self, api_token: str | None = None, loader: DataLoader | None = None) -> None:
         self._loader = loader if loader is not None else DataLoader()
         if loader is None and api_token:
-            self._loader.login_by_token(api_token)
+            try:
+                self._loader.login_by_token(api_token)
+            except Exception as exc:
+                raise _classify_error(exc) from exc
 
     def _call(self, dataset_fn, columns: list[str], **kwargs) -> pd.DataFrame:
         """呼叫底層 FinMind SDK method，並把裸 Exception 轉成分類過的例外。
@@ -149,12 +222,7 @@ class FinMindClient:
         except FinMindClientError:
             raise
         except Exception as exc:
-            message = str(exc)
-            if "402" in message:
-                raise FinMindQuotaExceededError(message) from exc
-            if "401" in message or "403" in message:
-                raise FinMindAuthError(message) from exc
-            raise FinMindAPIError(message) from exc
+            raise _classify_error(exc) from exc
 
         if df is None or df.empty:
             return pd.DataFrame(columns=columns)
@@ -275,3 +343,41 @@ class FinMindClient:
         df = df.rename(columns={"PER": "pe_ratio", "PBR": "pb_ratio"})
         df["date"] = pd.to_datetime(df["date"])
         return df[_VALUATION_RATIOS_COLUMNS]
+
+    def get_dividend_result(self, stock_id: str, start_date: str, end_date: str) -> pd.DataFrame:
+        df = self._call(
+            self._loader.taiwan_stock_dividend_result,
+            _DIVIDEND_RESULT_COLUMNS,
+            stock_id=stock_id, start_date=start_date, end_date=end_date,
+        )
+        if df.empty:
+            return df
+        df = df.rename(columns={
+            "stock_and_cache_dividend": "dividend",
+            "stock_or_cache_dividend": "dividend_type",
+        })
+        df["date"] = pd.to_datetime(df["date"])
+        return df[_DIVIDEND_RESULT_COLUMNS]
+
+    def get_split_price(self, start_date: str, end_date: str) -> pd.DataFrame:
+        """全市場查詢（底層SDK不接受stock_id），呼叫端自行依stock_id篩選。"""
+        df = self._call(
+            self._loader.taiwan_stock_split_price,
+            _SPLIT_PRICE_COLUMNS,
+            start_date=start_date, end_date=end_date,
+        )
+        if df.empty:
+            return df
+        df["date"] = pd.to_datetime(df["date"])
+        return df[_SPLIT_PRICE_COLUMNS]
+
+    def get_trading_dates(self, start_date: str, end_date: str) -> pd.DataFrame:
+        df = self._call(
+            self._loader.taiwan_stock_trading_date,
+            _TRADING_DATES_COLUMNS,
+            start_date=start_date, end_date=end_date,
+        )
+        if df.empty:
+            return df
+        df["date"] = pd.to_datetime(df["date"])
+        return df[_TRADING_DATES_COLUMNS].sort_values("date").reset_index(drop=True)

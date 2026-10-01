@@ -56,15 +56,35 @@ def main() -> None:
 
     for name, method in checks:
         print(f"\n===== {name}({stock_id}, {start_str}, {end_str}) =====")
-        try:
-            df = method(stock_id, start_str, end_str)
-        except Exception as exc:
-            print(f"  ERROR: {type(exc).__name__}: {exc}")
-            continue
-        print(f"  columns: {list(df.columns)}")
-        print(f"  rows: {len(df)}")
-        if not df.empty:
-            print(df.head(3).to_string())
+        _show(lambda: method(stock_id, start_str, end_str))
+
+    # 除權息/分割需要較長區間才查得到事件；交易日曆往後查以確認是否含未來日期
+    year_start = date(end.year - 1, 1, 1).isoformat()
+    print(f"\n===== get_dividend_result({stock_id}, {year_start}, {end_str}) =====")
+    _show(lambda: client.get_dividend_result(stock_id, year_start, end_str))
+
+    print(f"\n===== get_split_price({year_start}, {end_str}) [全市場] =====")
+    _show(lambda: client.get_split_price(year_start, end_str))
+
+    future_end = (end + timedelta(days=120)).isoformat()
+    print(f"\n===== get_trading_dates({end_str}, {future_end}) =====")
+    df = _show(lambda: client.get_trading_dates(end_str, future_end))
+    if df is not None and not df.empty:
+        print(f"  已公布到: {df['date'].max().date()}")
+
+
+def _show(fetch):
+    try:
+        df = fetch()
+    except Exception as exc:
+        print(f"  ERROR: {type(exc).__name__}: {exc}")
+        return None
+    print(f"  columns: {list(df.columns)}")
+    print(f"  dtypes: {dict(df.dtypes.astype(str))}")
+    print(f"  rows: {len(df)}")
+    if not df.empty:
+        print(df.head(3).to_string())
+    return df
 
 
 if __name__ == "__main__":
