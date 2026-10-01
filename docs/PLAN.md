@@ -312,15 +312,21 @@ DATABASE_URL=sqlite:///./data/stockagent.db
   - [x] `uv run pytest` 全過（262 passed，`-W error::DeprecationWarning` 亦通過），每個規則函式至少涵蓋一個邊界case
   - [x] 真實資料人工驗證腳本：`verify_price_adjust.py` / `verify_technical.py` / `verify_chip.py` / `verify_fundamental.py` / `verify_signals.py`
 
-### Stage 3：LLM判斷層
+### Stage 3：LLM判斷層（程式完成，待使用者以真實 Key 人工驗收）
 - **已拍板（2026-10-01）**：模型先用 `gpt-4o`（`.env` 的 `OPENAI_MODEL`，可替換）
 - **prompt 長度實測**（緊湊 JSON）：2330 約 7.9K 字元，其中新聞佔 57%，而新聞中連結又佔一半以上（2,319 字元，標題只有 908）。建議：送給 LLM 時不含新聞連結（連結保留在報告供網頁顯示）、JSON 不縮排 → 2330 約 5.5K 字元
 - **規格**：定義丟給 ChatGPT 的輸入（事實清單 JSON schema）與輸出（買點/賣點/風險/長期與否/判斷依據/信心程度的 JSON schema），用 OpenAI Structured Outputs 強制格式
 - **測試**：mock OpenAI API，驗證 1) prompt組裝內容包含必要事實欄位 2) 回傳能正確解析成內部 pydantic model 3) API失敗/未設Key時回傳`llm_status="failed"/"pending"`而不拋例外中斷
 - **實作**：`llm/prompt_templates.py`／`llm/report_generator.py`
 - **驗收**：
-  - [ ] mock測試全過
-  - [ ] 用真實Key人工跑 `analyze_one.py 2330`，人工檢視報告品質與格式（此項無法自動化，為人工驗收）
+  - **實作（2026-10-01）**：
+    - 報告欄位（`llm/report_schema.py`）：計畫原欄位＋使用者要求的**目標價、停損價、建議持有多久**（short_term/swing/long_term/not_recommended）；所有價格必須取自價位清單並寫明依據
+    - **prompt 獨立管理**（使用者要求）：`llm/prompts/stock_report/system.md`、`user.md`，以 `llm/prompt_templates.py` 載入；版本為檔案內容 sha256 前12碼，自動隨修改變動並記錄在報告中
+    - `llm/report_generator.py`：事實清單去掉新聞連結、緊湊 JSON；`chat.completions.parse` + Structured Outputs（openai SDK 3.22.1 實測可用）；沒有 Key 或仍是範例值 → pending、API錯誤/拒答/無法解析 → failed，皆不丟例外；**價格事後驗證**，不在價位清單者列入 warnings
+    - `pipeline/fetch.py`：依回溯期間抓齊原始資料（Stage 4 共用）
+    - `scripts/analyze_one.py`：`--dry-run` 只印 prompt 不呼叫 API；2330 prompt 約 system 1.4K + 事實 6.5K 字元
+  - [x] mock測試全過（286 passed）
+  - [ ] 用真實Key人工跑 `analyze_one.py 2330`，人工檢視報告品質與格式（此項無法自動化，為人工驗收；`.env` 的 OPENAI_API_KEY 目前仍是範例值）
 
 ### Stage 4：Pipeline 整合
 - **規格**：`analyze_stock(stock_id, as_of_date) -> AnalysisReport`，串接 Stage1-3；定義單支股票分析失敗時要拋出什麼例外，供上層（排程/API）決定如何處理

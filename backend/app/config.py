@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     finmind_api_token: str | None = None
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o"
+    openai_temperature: float = 0.2      # 偏低以提高同一份事實重跑時結論的一致性
+    openai_timeout_seconds: float = 60.0
 
     # 排程（Stage 6，目前延後）
     daily_analysis_hour: int = 17
