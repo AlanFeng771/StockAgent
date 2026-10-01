@@ -33,6 +33,7 @@ def main() -> None:
     client = create_finmind_client()
     price_start = start(LOOKBACK.price)
     data = StockRawData(
+        stock_info=client.get_stock_info(),
         prices=client.get_price(stock_id, price_start, end),
         dividends=client.get_dividend_result(stock_id, price_start, end),
         splits=client.get_split_price(price_start, end),
@@ -50,7 +51,8 @@ def main() -> None:
         print(payload)
         return
 
-    print(f"{stock_id} 資料日期：")
+    name = result.profile.stock_name if result.profile else "（查無名稱）"
+    print(f"{stock_id} {name} 資料日期：")
     for key, value in result.data_freshness.items():
         print(f"  {key:14} {value or '—'}")
     for section in ("technical", "chip", "fundamental"):
@@ -61,6 +63,21 @@ def main() -> None:
         print(f"\n[{section}] {len(part.signals)} 個訊號")
         for signal in part.signals:
             print(f"  [{signal.bias:7}] {signal.date} {signal.description}")
+    levels = result.price_levels
+    if levels is None:
+        print(f"\n[price_levels] 無：{result.unavailable['price_levels']}")
+    else:
+        flags = [k for k, v in levels.flags.items() if v] or "無"
+        print(f"\n[price_levels] 現價 {levels.close}（升降單位類別 {levels.kind}），旗標 {flags}")
+        for title, items in (("壓力", levels.resistances), ("支撐", levels.supports)):
+            for lv in items[:5]:
+                zone = f" ～ 看盤軟體 {lv.chart_price}" if lv.chart_price is not None else ""
+                when = f"（{lv.date}）" if lv.date else ""
+                print(f"  {title} {lv.price}{zone}  {lv.source}{when}  {lv.distance_pct:+.2f}%")
+        if levels.fill_gap:
+            gap = levels.fill_gap
+            status = f"已於 {gap.filled_date} 填息" if gap.filled else "尚未填息"
+            print(f"  填息價 {gap.fill_price}（{gap.ex_date} 除權息 {gap.dividend}）{status}")
     print(f"\n[news] {len(result.news)} 則")
     for item in result.news[:5]:
         print(f"  {item.date} {item.title}")

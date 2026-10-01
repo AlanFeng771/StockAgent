@@ -300,11 +300,16 @@ DATABASE_URL=sqlite:///./data/stockagent.db
   - 環境注意：pandas 2.3.3 + numpy 2.5.3 下建立 `pd.Timedelta(...)` 會觸發 numpy 棄用警告（未來版本會變錯誤），程式碼改用 `datetime.timedelta`
   - ETF/無財報標的：基本面訊號在資料為空時回傳 None，不丟例外
   - ✅ 彙整（`signals/signal_builder.py`）：`build_stock_signals(stock_id, StockRawData)` → `StockSignals`（各來源 data_freshness、三面向結果、`unavailable` 明列缺的面向與原因、新聞依日期去重最多20則）；JSON 的 NaN 輸出為 null（Pydantic v2 預設，且該設定不會傳給巢狀 model，由測試把關）。真實資料：2330 三面向齊全、JSON 約 1 萬字元；0056 基本面標示「ETF 等標的屬正常」
+  - ✅ 補充（2026-10-01 使用者確認）：
+    - 股票基本資料（`get_stock_info` + `data_sources/stock_profile.py`）：實測缺日期回字串 "None"、同代號多列、名稱帶空白/星號；`kind` 區分 stock / fund（ETF、上櫃ETF、REITs）/ other（DR、ETN，升降單位未查證）
+    - 新聞過濾（`signals/news_filter.py`，可替換介面，之後可改 LLM 過濾）：原提案「標題含名稱或代號」實測無效（2330 七天 183 則全部符合）→ 改為排除論壇「股市爆料同學會」、去掉與 source 相同的結尾後去重；2330 七天 191 → 61 則
+    - 升降單位（`signals/ticks.py`）：股票依證交所營業細則第62條（115.09.24 版查證）六級距；ETF/REITs 依受益憑證買賣辦法第7條第2項（114.09.30）未滿50元0.01、以上0.05；上櫃股票暫採同表（只查到興櫃辦法同表，上櫃條文待查證）
+    - 支撐壓力與填息價（`signals/price_levels.py`）：近20/60日高低（還原價）、MA、布林；價格對齊升降單位；除權息前的價位附「看盤軟體原始價」形成解套賣壓/支撐區間（還原價＝把股息算進去的投資人、原始價＝只記得原買價的投資人），面額變更後不提供；填息價以收盤價判定。真實資料：2330 收在 2510 創20/60日新高、09-15 低點區間 2375～2380、09-17 填息
   - ⚠ 留給 Stage 3：FinMind 新聞含論壇貼文與關聯性低的標題（例：2330 新聞出現「被動元件概念股3002歐格準備漲停」），且新聞是外部文字，prompt 需標示為資料而非指令（第一輪風險檢討的 prompt injection 項目）
 - **測試**：針對每個函式用構造假資料寫邊界case（剛好穿越當天、穿越前一天、資料不足）；還原股價用真實事件數值當fixture（如6763面額變更491→49.1、0056除息）
 - **實作**：`indicators/price_adjust.py`／`technical.py`／`chip.py`／`fundamental.py`／`signals/signal_builder.py`
 - **驗收**：
-  - [x] `uv run pytest` 全過（201 passed，`-W error::DeprecationWarning` 亦通過），每個規則函式至少涵蓋一個邊界case
+  - [x] `uv run pytest` 全過（262 passed，`-W error::DeprecationWarning` 亦通過），每個規則函式至少涵蓋一個邊界case
   - [x] 真實資料人工驗證腳本：`verify_price_adjust.py` / `verify_technical.py` / `verify_chip.py` / `verify_fundamental.py` / `verify_signals.py`
 
 ### Stage 3：LLM判斷層

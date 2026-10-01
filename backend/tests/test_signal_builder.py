@@ -72,8 +72,18 @@ def make_news():
     ])
 
 
+def make_stock_info():
+    return pd.DataFrame([
+        {"stock_id": "2330", "stock_name": "台積電", "industry_category": "半導體業", "market": "twse",
+         "date": pd.Timestamp("2026-10-01")},
+        {"stock_id": "0056", "stock_name": "元大高股息", "industry_category": "ETF", "market": "twse",
+         "date": pd.Timestamp("2026-10-01")},
+    ])
+
+
 def make_data(**overrides) -> StockRawData:
     data = {
+        "stock_info": make_stock_info(),
         "prices": make_prices(),
         "dividends": empty(fc._DIVIDEND_RESULT_COLUMNS),
         "splits": empty(fc._SPLIT_PRICE_COLUMNS),
@@ -224,3 +234,33 @@ def test_default_filter_excludes_forum_posts():
     result = build_stock_signals("2330", make_data(news=news))
 
     assert all("股市爆料同學會" not in n.title for n in result.news)
+
+
+def test_profile_and_price_levels_included():
+    result = build_stock_signals("2330", make_data())
+
+    assert result.profile.stock_name == "台積電"
+    assert result.price_levels is not None
+    assert result.price_levels.kind == "stock"
+    assert result.price_levels.close == result.technical.snapshot["close"]
+
+
+def test_price_levels_use_profile_kind_for_ticks():
+    result = build_stock_signals("0056", make_data(prices=make_prices().assign(stock_id="0056")))
+
+    assert result.price_levels.kind == "fund"
+
+
+def test_unknown_profile_reported_and_levels_not_tick_aligned():
+    result = build_stock_signals("2330", make_data(stock_info=empty(fc._STOCK_INFO_COLUMNS)))
+
+    assert result.profile is None
+    assert result.unavailable["profile"] == "查無股票基本資料"
+    assert result.price_levels.kind == "other"
+
+
+def test_no_price_levels_when_prices_insufficient():
+    result = build_stock_signals("2330", make_data(prices=make_prices(PRICE_DAYS[-30:])))
+
+    assert result.price_levels is None
+    assert result.unavailable["price_levels"] == result.unavailable["technical"]

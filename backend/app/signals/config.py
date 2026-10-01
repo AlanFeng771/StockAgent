@@ -64,6 +64,7 @@
 
 彙整（signal_builder）
 - 新聞最多保留 ``news_max_items``（20）則最新標題給 LLM，控制 prompt 長度
+- 支撐壓力取近 ``price_level_windows``（20、60）個交易日的最高/最低（2026-10-01 使用者確認）
 - 標題含 ``news_excluded_title_markers`` 任一字串的新聞排除（預設論壇「股市爆料同學會」：
   實測 2330 七天 183 則中 93 則是論壇貼文，部分與公司無關）
 """
@@ -135,6 +136,7 @@ class SignalParams:
     per_high_percentile: float = 80.0
     per_min_days: int = 60
     news_max_items: int = 20
+    price_level_windows: tuple[int, ...] = (20, 60)
     news_excluded_title_markers: tuple[str, ...] = ("股市爆料同學會",)
 
 
