@@ -115,9 +115,13 @@ FinMind API 的日期格式。
 - API 回 HTTP 200 但JSON沒有 ``data`` 欄位（其他格式異常）：SDK會丟出內容為
   ``f"FinMind API unexpected response: {msg}"`` 的裸 ``Exception``，本
   client一律轉成 ``FinMindAPIError``。
-- 建構子 ``login_by_token`` 失敗：SDK丟出 ``Exception(str(resp))``，訊息形如
-  ``"<Response [401]>"``，依同一套狀態碼規則分類；網路錯誤等沒有狀態碼的
-  例外轉成 ``FinMindAPIError``。建構子不會丟出未分類的裸例外。
+- 無效token（真實API實測，與原先依SDK原始碼推測的401/403不同）：資料查詢回
+  ``{"msg":"Token is illegal.","status":400}``，訊息含 ``Token is illegal`` 一律轉成
+  ``FinMindAuthError``。401/403 的分類保留，但尚未實際觀察到。
+- 建構子 ``login_by_token``：實測無效token時 ``/v2/user_info`` 回 HTTP 200、內文
+  status 400，SDK仍判定「Login success」，**建構子偵測不到無效token**，要到第一次
+  查資料才會丟出 ``FinMindAuthError``。若 login 本身丟例外（SDK訊息形如
+  ``"<Response [401]>"``、或網路錯誤），依同一套規則分類，不會丟出未分類的裸例外。
 """
 
 from __future__ import annotations
@@ -157,6 +161,7 @@ _STATUS_CODE_PATTERNS = (
     re.compile(r"<Response \[(\d{3})\]>"),
 )
 _SPONSOR_REQUIRED_MARKER = "update your user level"
+_INVALID_TOKEN_MARKER = "Token is illegal"
 
 
 def _classify_error(exc: Exception) -> FinMindClientError:
@@ -164,6 +169,8 @@ def _classify_error(exc: Exception) -> FinMindClientError:
     message = str(exc)
     if _SPONSOR_REQUIRED_MARKER in message:
         return FinMindSponsorRequiredError(message)
+    if _INVALID_TOKEN_MARKER in message:
+        return FinMindAuthError(message)
     for pattern in _STATUS_CODE_PATTERNS:
         match = pattern.search(message)
         if match:

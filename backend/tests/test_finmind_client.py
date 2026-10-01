@@ -134,6 +134,9 @@ def test_get_price_empty_response_returns_empty_dataframe_with_expected_columns(
         ("Final response status: 500, text: stock_id 2402 failed", FinMindAPIError),
         ("Final response status: 500, text: 4010 not found", FinMindAPIError),
         (SPONSOR_MESSAGE, FinMindSponsorRequiredError),
+        # 真實API實測：無效token回 {"msg":"Token is illegal.","status":400}，不是401/403
+        ("FinMind API unexpected response: Token is illegal.", FinMindAuthError),
+        ('Final response status: 400, text: {"msg":"Token is illegal.","status":400}', FinMindAuthError),
     ],
 )
 def test_get_price_classifies_sdk_errors(message, expected_exception):

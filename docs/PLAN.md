@@ -267,6 +267,7 @@ DATABASE_URL=sqlite:///./data/stockagent.db
   - 新增 `FinMindSponsorRequiredError`（依 `update your user level` 訊息判斷）
   - 錯誤分類改成只依狀態碼（regex），修正原本「訊息子字串含402/401」會把股票代號、日期誤判的問題
   - 建構子 `login_by_token` 失敗改為丟出分類後的例外（原本會丟裸 `Exception("<Response [401]>")`）
+  - **人工驗證再發現**：無效token實測回 `{"msg":"Token is illegal.","status":400}`（非原規格推測的401/403），且SDK login 對無效token仍判定成功 → 改依 `Token is illegal` 訊息轉成 `FinMindAuthError`，在第一次查資料時丟出
 - **驗收**：
   - [x] `uv run pytest` 全過（38 passed）
   - [x] `explore_finmind.py` 對新dataset實測，欄位/型別與規格一致
@@ -281,8 +282,9 @@ DATABASE_URL=sqlite:///./data/stockagent.db
   - 所有參數由 `config.py` 的 `Settings` 統一管理（`CACHE_DIR`/`CACHE_TTL_SECONDS`/`CACHE_FINAL_AFTER_DAYS`/`CACHE_MAX_AGE_DAYS`），`create_finmind_client()` 依設定建立；相對路徑以專案根目錄為基準
 - **效益來源**：價格/法人等「一次呼叫可查任意區間」的dataset，當日首跑仍需呼叫（最新幾天未定案），省的是**重跑**；新聞逐日呼叫，已定案的日子永久命中，首跑也省
 - **驗收**：
-  - [x] `uv run pytest` 全過（60 passed）
+  - [x] `uv run pytest` 全過（62 passed）
   - [x] 真實API實測：同一組查詢（股價/法人/除權息/7天新聞）首跑 10 次呼叫，重跑 0 次、結果一致
+  - [ ] 使用者人工驗證（`verify_cache.py` 連跑兩次：首跑14次呼叫、重跑0次）
 
 ### Stage 2：規則訊號層（技術／籌碼／基本面）
 - **規格**：逐一定義每個指標/訊號函式的輸入輸出與邊界，例如「MA5從下方穿越到上方MA20的當天才算golden_cross=true，持平不算、資料不足回傳None」；所有門檻值集中寫入 `signals/config.py`
