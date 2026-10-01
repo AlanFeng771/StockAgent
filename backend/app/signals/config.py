@@ -43,6 +43,14 @@
   每筆附發生日與 days_ago（2026-10-01 使用者確認）
 - RSI 過熱/超賣：RSI6 80/20、RSI12 70/30（短週期波動大，門檻放寬；2026-10-01 使用者確認）
 - KD 過熱/超賣：K 80/20
+
+籌碼面（2026-10-01 使用者確認）
+- 外資/投信連續買超或賣超 >= ``chip_streak_days``（預設 3）天產生訊號
+- 法人買賣力道（外資＋投信近 ``chip_sum_days`` 日合計 ÷ 同期成交量）只當數值給 LLM，不設門檻
+- 融資近 ``chip_sum_days`` 日增減 > ``margin_change_pct``（預設 5%）且股價反向 → 訊號
+- 券資比 > ``short_margin_ratio_pct``（預設 30%）→ 訊號（neutral，交給 LLM）
+- 自營商（含避險）只列數值不產生訊號：ETF 造市避險量大且不代表看法
+  （實測 0056 2026-09-30 自營商避險賣超 1,574 萬股，同日外資買超 370 萬股）
 """
 
 from __future__ import annotations
@@ -99,6 +107,10 @@ class SignalParams:
     rsi_thresholds: tuple[tuple[int, float, float], ...] = ((6, 80.0, 20.0), (12, 70.0, 30.0))
     kd_overbought: float = 80.0
     kd_oversold: float = 20.0
+    chip_streak_days: int = 3
+    chip_sum_days: int = 5
+    margin_change_pct: float = 5.0
+    short_margin_ratio_pct: float = 30.0
 
 
 LOOKBACK = LookbackDays()

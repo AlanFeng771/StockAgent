@@ -295,6 +295,7 @@ DATABASE_URL=sqlite:///./data/stockagent.db
   - ✅ 技術指標數值（`indicators/technical.py`）：MA、RSI（Wilder）、台股KD（ta套件的KD算法與台股不同，自行實作）、MACD、布林（母體標準差）、均量；RSI/MACD 以 ta 套件為獨立參考比對，KD 手算驗證；人工對照用 `scripts/verify_technical.py`
     - 使用者對照券商App（2330，2026-10-01）：用原始價重算時 MA20/MA60/KD/RSI6/RSI12/MACD 與App一致（MACD 18.036 完全相同），差異完全來自還原價 → **確認維持還原價**；RSI 改為與App一致的 RSI6/RSI12；App 的「MACD」對應本專案 `macd_signal`
   - ✅ 技術面訊號（`signals/technical_signals.py`，共用格式 `signals/models.py` 的 `Signal`）：交叉事件回看最近5個交易日附日期與days_ago（MA5/MA20、KD含高低檔、MACD、RSI6/RSI12）；當日狀態（均線排列、站上/跌破MA60、RSI6 80/20、RSI12 70/30、K 80/20、MACD 0軸、布林突破、爆量2倍/量縮0.5倍——以前一日20日均量為基準）；門檻皆在 `SignalParams` 可調。真實資料：0056 呈現 RSI6/12 09-23死亡→09-30黃金→10-01死亡的反覆訊號
+  - ✅ 籌碼面訊號（`signals/chip_signals.py`）：外資＝Foreign_Investor＋Foreign_Dealer_Self、投信、自營商（只列數值不產生訊號，ETF避險雜訊大）；外資/投信連續買賣超≥3天、融資5日變化>5%且股價反向、券資比>30%；法人買賣力道（近5日÷成交量）只給數值。法人單位股、融資單位張（由2330融資限額＝總股數25%換算確認）。籌碼日期獨立標示（實測10-01下午股價已更新、法人/融資只到09-30）。百分比計算先相減再相除並四捨五入，修正「剛好等於門檻」被浮點誤差判成超過的bug
   - ETF/無財報標的：基本面訊號在資料為空時回傳 None，不丟例外
 - **測試**：針對每個函式用構造假資料寫邊界case（剛好穿越當天、穿越前一天、資料不足）；還原股價用真實事件數值當fixture（如6763面額變更491→49.1、0056除息）
 - **實作**：`indicators/price_adjust.py`／`technical.py`／`chip.py`／`fundamental.py`／`signals/signal_builder.py`
