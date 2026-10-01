@@ -32,26 +32,32 @@ def main() -> None:
     end = date.today()
     start = end - timedelta(days=60)
     start_str, end_str = start.isoformat(), end.isoformat()
-    # get_news 底層限制為單日查詢，client內部逐日迭代呼叫API，
-    # 用與其他dataset相同的60天範圍會打上百次請求，這裡刻意縮短範圍。
-    news_start_str = (end - timedelta(days=3)).isoformat()
 
     client = FinMindClient(api_token=token)
 
+    print(f"\n===== get_news({stock_id}, {end_str}) [單日，省略end_date] =====")
+    try:
+        df = client.get_news(stock_id, end_str)
+        print(f"  columns: {list(df.columns)}")
+        print(f"  rows: {len(df)}")
+        if not df.empty:
+            print(df.head(3).to_string())
+    except Exception as exc:
+        print(f"  ERROR: {type(exc).__name__}: {exc}")
+
     checks = [
-        ("get_price", client.get_price, start_str, end_str),
-        ("get_institutional_investors", client.get_institutional_investors, start_str, end_str),
-        ("get_margin_trading", client.get_margin_trading, start_str, end_str),
-        ("get_financial_statement", client.get_financial_statement, start_str, end_str),
-        ("get_month_revenue", client.get_month_revenue, start_str, end_str),
-        ("get_news", client.get_news, news_start_str, end_str),
-        ("get_valuation_ratios", client.get_valuation_ratios, start_str, end_str),
+        ("get_price", client.get_price),
+        ("get_institutional_investors", client.get_institutional_investors),
+        ("get_margin_trading", client.get_margin_trading),
+        ("get_financial_statement", client.get_financial_statement),
+        ("get_month_revenue", client.get_month_revenue),
+        ("get_valuation_ratios", client.get_valuation_ratios),
     ]
 
-    for name, method, range_start, range_end in checks:
-        print(f"\n===== {name}({stock_id}, {range_start}, {range_end}) =====")
+    for name, method in checks:
+        print(f"\n===== {name}({stock_id}, {start_str}, {end_str}) =====")
         try:
-            df = method(stock_id, range_start, range_end)
+            df = method(stock_id, start_str, end_str)
         except Exception as exc:
             print(f"  ERROR: {type(exc).__name__}: {exc}")
             continue

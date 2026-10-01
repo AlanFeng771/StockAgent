@@ -242,6 +242,24 @@ def test_get_news_single_day_range_calls_loader_once_without_end_date():
     assert df.iloc[0]["title"] == "台積電法說會"
 
 
+def test_get_news_omitted_end_date_queries_single_day_only():
+    calls = []
+
+    def fake_news(**kwargs):
+        calls.append(kwargs)
+        return pd.DataFrame([{
+            "date": "2026-09-28", "stock_id": "2330", "title": "台積電法說會",
+            "link": "https://example.com", "source": "cnyes",
+        }])
+
+    client = make_client(taiwan_stock_news=fake_news)
+
+    df = client.get_news("2330", "2026-09-28")
+
+    assert calls == [{"stock_id": "2330", "start_date": "2026-09-28"}]
+    assert df.iloc[0]["title"] == "台積電法說會"
+
+
 def test_get_news_empty_response_returns_empty_dataframe_with_expected_columns():
     client = make_client(taiwan_stock_news=lambda **kwargs: pd.DataFrame())
 
