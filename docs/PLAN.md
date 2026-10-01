@@ -284,7 +284,7 @@ DATABASE_URL=sqlite:///./data/stockagent.db
 - **驗收**：
   - [x] `uv run pytest` 全過（62 passed）
   - [x] 真實API實測：同一組查詢（股價/法人/除權息/7天新聞）首跑 10 次呼叫，重跑 0 次、結果一致
-  - [ ] 使用者人工驗證（`verify_cache.py` 連跑兩次：首跑14次呼叫、重跑0次）
+  - [x] 使用者人工驗證（2026-10-01）：pytest 62 passed；`explore_finmind.py` 帶真實token無ERROR、欄位與規格一致、額度上限600；無效token各項皆為 `FinMindAuthError`；`verify_cache.py` 連跑兩次首跑14次呼叫、重跑0次
 
 ### Stage 2：規則訊號層（技術／籌碼／基本面）
 - **規格**：逐一定義每個指標/訊號函式的輸入輸出與邊界，例如「MA5從下方穿越到上方MA20的當天才算golden_cross=true，持平不算、資料不足回傳None」；所有門檻值集中寫入 `signals/config.py`
