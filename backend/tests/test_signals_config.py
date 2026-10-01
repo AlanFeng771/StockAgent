@@ -45,3 +45,9 @@ def test_volume_ratios_are_configurable_with_defaults():
     assert SIGNALS.volume_surge_ratio == 2.0
     assert SIGNALS.volume_shrink_ratio == 0.5
     assert SIGNALS.volume_shrink_ratio < 1 < SIGNALS.volume_surge_ratio
+
+
+def test_rsi_thresholds_cover_every_rsi_period():
+    assert tuple(period for period, _, _ in SIGNALS.rsi_thresholds) == TECHNICAL.rsi_periods
+    for _, overbought, oversold in SIGNALS.rsi_thresholds:
+        assert 0 < oversold < 50 < overbought < 100

@@ -38,6 +38,11 @@
 - 爆量：當日成交量 > ``volume_surge_ratio`` × 20日均量（預設 2.0）
 - 量縮：當日成交量 < ``volume_shrink_ratio`` × 20日均量（預設 0.5）
   兩者無統一業界標準，2026-10-01 使用者確認先用預設值、需可調整
+  「20日均量」用**前一日**的 20 日均量（不含當天），避免當天爆量拉高均量而稀釋倍數
+- 交叉訊號回看最近 ``cross_lookback_days`` 個交易日（預設 5，含最新交易日），
+  每筆附發生日與 days_ago（2026-10-01 使用者確認）
+- RSI 過熱/超賣：RSI6 80/20、RSI12 70/30（短週期波動大，門檻放寬；2026-10-01 使用者確認）
+- KD 過熱/超賣：K 80/20
 """
 
 from __future__ import annotations
@@ -89,6 +94,11 @@ class TechnicalParams:
 class SignalParams:
     volume_surge_ratio: float = 2.0
     volume_shrink_ratio: float = 0.5
+    cross_lookback_days: int = 5
+    # (RSI 週期, 過熱門檻, 超賣門檻)，週期需與 TechnicalParams.rsi_periods 一致
+    rsi_thresholds: tuple[tuple[int, float, float], ...] = ((6, 80.0, 20.0), (12, 70.0, 30.0))
+    kd_overbought: float = 80.0
+    kd_oversold: float = 20.0
 
 
 LOOKBACK = LookbackDays()

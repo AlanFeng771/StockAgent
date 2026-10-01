@@ -25,6 +25,7 @@ from backend.app.data_sources.finmind_client import create_finmind_client  # noq
 from backend.app.indicators.price_adjust import adjust_prices  # noqa: E402
 from backend.app.indicators.technical import compute_technical  # noqa: E402
 from backend.app.signals.config import LOOKBACK  # noqa: E402
+from backend.app.signals.technical_signals import detect_technical_signals  # noqa: E402
 
 
 def main() -> None:
@@ -50,6 +51,19 @@ def main() -> None:
     view = df[columns].tail(5).copy()
     view["date"] = view["date"].dt.strftime("%Y-%m-%d")
     print(view.round(2).to_string(index=False))
+
+    result = detect_technical_signals(df)
+    if result is None:
+        print("\n資料不足，無法產生訊號")
+        return
+    print(f"\n===== 訊號（as_of {result.as_of}）=====")
+    for signal in result.signals:
+        extra = ""
+        if signal.value is not None:
+            extra = f"  值 {signal.value:.2f}" + (f" / 門檻 {signal.threshold:.2f}" if signal.threshold is not None else "")
+        print(f"  [{signal.bias:7}] {signal.date}（{signal.days_ago} 天前）{signal.description}{extra}")
+    if not result.signals:
+        print("  （無）")
 
 
 if __name__ == "__main__":
