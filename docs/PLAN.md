@@ -334,7 +334,7 @@ DATABASE_URL=sqlite:///./data/stockagent.db
   - [x] mock測試全過（303 passed）
   - [x] 用真實Key人工跑 `analyze_one.py`，人工檢視報告品質與格式（2026-10-01 使用者多檔試跑，目標價/停損價問題修正後確認 OK）
 
-### Stage 4：Pipeline 整合（程式完成，待使用者端到端人工驗收）
+### Stage 4：Pipeline 整合 ✅ 已完成
 - **規格**：`analyze_stock(stock_id, as_of_date) -> AnalysisReport`，串接 Stage1-3；定義單支股票分析失敗時要拋出什麼例外，供上層（排程/API）決定如何處理
   - **資料新鮮度**：逐dataset檢查最新一筆date，產出 `data_freshness`（例：`{price: "2026-10-01", margin: "2026-09-30"}`）存入報告並當事實餵給LLM；股價本身不是 as_of_date 時不呼叫LLM（交給排程層判斷延遲/休市/個股停牌）
   - 依 `signals/config.py` 的回溯期間抓資料
@@ -345,7 +345,7 @@ DATABASE_URL=sqlite:///./data/stockagent.db
   - `scripts/analyze_one.py` 改走 pipeline；實測查無代號 99999 → `StockNotFoundError`，不呼叫 OpenAI
 - **驗收**：
   - [x] `uv run pytest backend/tests/test_pipeline.py` 全過（全部 313 passed）
-  - [ ] `scripts/analyze_one.py` 端到端人工跑通
+  - [x] `scripts/analyze_one.py` 端到端人工跑通（2026-10-01 使用者跑 2330 成功）
 
 ### Stage 5：資料庫層
 - **規格**：SQLAlchemy models 的 schema（見核心設計重點）；CRUD 函式的行為contract，例如「新增重複 stock_id 時要忽略還是報錯」需先拍板寫進規格
