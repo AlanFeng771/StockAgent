@@ -203,3 +203,24 @@ def test_json_output_is_valid_with_nan_as_null():
 
     parsed = json.loads(payload, parse_constant=reject)
     assert parsed["technical"]["snapshot"]["volume_ratio"] is None
+
+
+def test_custom_news_filter_is_used():
+    """之後改用 LLM 過濾時，傳入同介面的實作即可。"""
+    def only_first(news):
+        return news.sort_values("date", ascending=False).head(1)
+
+    result = build_stock_signals("2330", make_data(), news_filter=only_first)
+
+    assert [n.title for n in result.news] == ["新聞"]
+
+
+def test_default_filter_excludes_forum_posts():
+    news = pd.concat([make_news(), pd.DataFrame([{
+        "date": pd.Timestamp("2026-10-01"), "stock_id": "2330",
+        "title": "2330 台積電 - 閒聊- 股市爆料同學會 - CMoney", "link": "https://e", "source": "CMoney",
+    }])])
+
+    result = build_stock_signals("2330", make_data(news=news))
+
+    assert all("股市爆料同學會" not in n.title for n in result.news)

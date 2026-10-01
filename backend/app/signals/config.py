@@ -64,6 +64,8 @@
 
 彙整（signal_builder）
 - 新聞最多保留 ``news_max_items``（20）則最新標題給 LLM，控制 prompt 長度
+- 標題含 ``news_excluded_title_markers`` 任一字串的新聞排除（預設論壇「股市爆料同學會」：
+  實測 2330 七天 183 則中 93 則是論壇貼文，部分與公司無關）
 """
 
 from __future__ import annotations
@@ -133,6 +135,7 @@ class SignalParams:
     per_high_percentile: float = 80.0
     per_min_days: int = 60
     news_max_items: int = 20
+    news_excluded_title_markers: tuple[str, ...] = ("股市爆料同學會",)
 
 
 LOOKBACK = LookbackDays()

@@ -13,7 +13,8 @@
 1. 股價 → ``adjust_prices``（除權息 + 面額變更）→ ``compute_technical`` → ``detect_technical_signals``
 2. ``detect_chip_signals``（法人、融資，股價用還原後的資料）
 3. ``detect_fundamental_signals``（月營收、財報、估值）
-4. 新聞：依 date 由新到舊、同標題只留最新一則，最多 ``news_max_items`` 則
+4. 新聞：經 ``news_filter``（預設 ``RuleBasedNewsFilter``：排除論壇貼文、去掉結尾來源後去重、
+   由新到舊）過濾後，最多 ``news_max_items`` 則。之後改用 LLM 過濾時傳入同介面的實作即可
 
 輸出 ``StockSignals``
 ---------------------
@@ -45,6 +46,7 @@ from backend.app.indicators.technical import compute_technical
 from backend.app.signals.chip_signals import ChipSignals, detect_chip_signals
 from backend.app.signals.config import SIGNALS, TECHNICAL, SignalParams
 from backend.app.signals.fundamental_signals import FundamentalSignals, detect_fundamental_signals
+from backend.app.signals.news_filter import NewsFilter, RuleBasedNewsFilter
 from backend.app.signals.technical_signals import TechnicalSignals, detect_technical_signals
 
 FRESHNESS_KEYS = ("price", "institutional", "margin", "revenue", "financials", "valuation", "news")
@@ -85,6 +87,7 @@ def build_stock_signals(
     stock_id: str,
     data: StockRawData,
     signal_params: SignalParams = SIGNALS,
+    news_filter: NewsFilter | None = None,
 ) -> StockSignals:
     unavailable: dict[str, str] = {}
 
@@ -107,7 +110,8 @@ def build_stock_signals(
     if fundamental is None:
         unavailable["fundamental"] = "無月營收、財報與估值資料（ETF 等標的屬正常）"
 
-    news = _latest_news(data.news, signal_params.news_max_items)
+    news_filter = news_filter or RuleBasedNewsFilter(signal_params.news_excluded_title_markers)
+    news = _to_news_items(news_filter(data.news), signal_params.news_max_items)
     freshness = {
         "price": _latest_date(adjusted),
         "institutional": chip.as_of_institutional if chip else None,
@@ -127,15 +131,11 @@ def _latest_date(df: pd.DataFrame) -> date | None:
     return None if df.empty else pd.Timestamp(df["date"].max()).date()
 
 
-def _latest_news(news: pd.DataFrame, limit: int) -> list[NewsItem]:
+def _to_news_items(news: pd.DataFrame, limit: int) -> list[NewsItem]:
+    """news 已由 news_filter 依新到舊排序並去重。"""
     if news.empty:
         return []
-    latest = (
-        news.assign(date=pd.to_datetime(news["date"]))
-        .sort_values("date", ascending=False, kind="stable")
-        .drop_duplicates("title", keep="first")
-        .head(limit)
-    )
+    latest = news.head(limit)
     return [
         NewsItem(date=row.date.date(), title=row.title, source=row.source, link=row.link)
         for row in latest.itertuples(index=False)
