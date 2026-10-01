@@ -110,3 +110,11 @@ def test_importing_main_does_not_create_database(tmp_path, monkeypatch):
         assert not db_file.exists()
     finally:
         config.get_settings.cache_clear()
+
+
+@pytest.mark.parametrize("path", ["/api/analysis/run", "/api/analysis/run/{stock_id}", "/api/watchlist"])
+def test_post_endpoints_declare_json_body_for_swagger(api, path):
+    # 沒宣告 request body 時，/docs（Swagger UI）不會送 Content-Type: application/json，會被 415 擋下
+    operation = api.get("/openapi.json").json()["paths"][path]["post"]
+
+    assert "application/json" in operation["requestBody"]["content"]

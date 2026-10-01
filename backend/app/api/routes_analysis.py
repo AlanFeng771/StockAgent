@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from backend.app.api.deps import get_session, session_factory_of
-from backend.app.api.schemas import ReportDetail
+from backend.app.api.schemas import ReportDetail, RunRequest
 from backend.app.db import crud
 from backend.app.pipeline.jobs import JobStatus
 
@@ -26,7 +26,7 @@ def _analyze_and_save(request: Request):
 
 
 @router.post("/run", response_model=JobStatus, status_code=202)
-def run_watchlist(request: Request, session: Session = Depends(get_session)):
+def run_watchlist(body: RunRequest, request: Request, session: Session = Depends(get_session)):
     stock_ids = [item.stock_id for item in crud.get_active_watchlist(session)]
     return request.app.state.jobs.start_watchlist_job(stock_ids, _analyze_and_save(request))
 
@@ -37,7 +37,7 @@ def analysis_status(request: Request):
 
 
 @router.post("/run/{stock_id}", response_model=ReportDetail)
-def run_single(stock_id: str, request: Request):
+def run_single(stock_id: str, body: RunRequest, request: Request):
     stock_id = crud.normalize_stock_id(stock_id)
     row = request.app.state.jobs.run_single(stock_id, _analyze_and_save(request))
     return ReportDetail.from_row(row)

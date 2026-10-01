@@ -60,6 +60,11 @@ class ReportDetail(ReportSummary):
         return super().from_row(row, signals=StockSignals.model_validate(row.signals_json), **extra)
 
 
+class RunRequest(BaseModel):
+    """觸發分析的請求內容（目前沒有參數，送 {} 即可）。宣告成 JSON body 是為了讓 /docs（Swagger UI）
+    會送出 Content-Type: application/json，否則會被「POST 只收 JSON」的保護擋下。"""
+
+
 class HealthOut(BaseModel):
     status: str
     database: str
