@@ -127,6 +127,7 @@ import re
 import pandas as pd
 from FinMind.data import DataLoader
 
+from backend.app.config import Settings, get_settings
 from backend.app.data_sources.cache import FinMindCache
 
 
@@ -395,3 +396,17 @@ class FinMindClient:
             return df
         df["date"] = pd.to_datetime(df["date"])
         return df[_TRADING_DATES_COLUMNS].sort_values("date").reset_index(drop=True)
+
+
+def create_finmind_client(settings: Settings | None = None, use_cache: bool = True) -> FinMindClient:
+    """依統一設定建立 client；``use_cache=False`` 供需要看真實API回應的場合（explore腳本）。"""
+    settings = settings or get_settings()
+    cache = None
+    if use_cache:
+        cache = FinMindCache(
+            settings.cache_dir,
+            ttl_seconds=settings.cache_ttl_seconds,
+            final_after_days=settings.cache_final_after_days,
+            max_age_days=settings.cache_max_age_days,
+        )
+    return FinMindClient(api_token=settings.finmind_api_token, cache=cache)

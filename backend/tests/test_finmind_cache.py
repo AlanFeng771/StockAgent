@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
@@ -194,3 +195,36 @@ def test_client_without_cache_always_calls_loader():
     client.get_price("2330", "2026-09-01", "2026-10-01")
 
     assert len(calls) == 2
+
+
+# ---------------------------------------------------------------------------
+# 自動清理：建立快取時刪除超過 max_age_days 未更新的檔案
+# ---------------------------------------------------------------------------
+
+def set_file_age(path, clock, days):
+    timestamp = (clock.now - timedelta(days=days)).timestamp()
+    os.utime(path, (timestamp, timestamp))
+
+
+def test_init_removes_files_older_than_max_age(tmp_path, clock):
+    cache = FinMindCache(tmp_path, now=clock)
+    cache.set("taiwan_stock_daily", HISTORICAL, sample_df())
+    cache.set("taiwan_stock_news", RECENT, sample_df())
+    old_path, new_path = sorted(tmp_path.glob("*.pkl"), key=lambda p: "daily" not in p.name)
+    set_file_age(old_path, clock, days=15)
+    set_file_age(new_path, clock, days=13)
+
+    FinMindCache(tmp_path, max_age_days=14, now=clock)
+
+    assert not old_path.exists()
+    assert new_path.exists()
+
+
+def test_init_cleanup_ignores_non_cache_files(tmp_path, clock):
+    keep = tmp_path / ".gitkeep"
+    keep.write_text("")
+    set_file_age(keep, clock, days=100)
+
+    FinMindCache(tmp_path, max_age_days=14, now=clock)
+
+    assert keep.exists()

@@ -7,8 +7,9 @@
 使用方式：
     uv run python backend/scripts/explore_finmind.py [stock_id]
 
-若 .env 裡有 FINMIND_API_TOKEN 會自動帶入登入；沒有的話以公開額度匿名呼叫
-（額度較低，但足夠驗證欄位格式）。
+token 由統一設定（``backend/app/config.py``，讀 .env 的 FINMIND_API_TOKEN）
+帶入；沒有的話以公開額度匿名呼叫（額度較低，但足夠驗證欄位格式）。
+本腳本刻意**不使用快取**，確保看到的是真實API回應。
 """
 
 from __future__ import annotations
@@ -17,24 +18,23 @@ import os
 import sys
 from datetime import date, timedelta
 
-from dotenv import load_dotenv
 from FinMind.data import DataLoader
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from backend.app.data_sources.finmind_client import FinMindClient  # noqa: E402
+from backend.app.config import get_settings  # noqa: E402
+from backend.app.data_sources.finmind_client import create_finmind_client  # noqa: E402
 
 
 def main() -> None:
-    load_dotenv()
     stock_id = sys.argv[1] if len(sys.argv) > 1 else "2330"
-    token = os.environ.get("FINMIND_API_TOKEN") or None
+    token = get_settings().finmind_api_token
 
     end = date.today()
     start = end - timedelta(days=60)
     start_str, end_str = start.isoformat(), end.isoformat()
 
-    client = FinMindClient(api_token=token)
+    client = create_finmind_client(use_cache=False)
 
     # 額度資訊來自 /v2/user_info，需帶token才有意義（匿名呼叫兩者皆回0）
     if token:

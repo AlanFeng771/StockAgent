@@ -8,12 +8,18 @@
 - 新聞逐日呼叫：已過去的日子從快取讀，不再重抓
 - 同一查詢重跑（開發時反覆跑 analyze_one）：在有效期內全部從快取讀
 
-``FinMindCache(cache_dir, ttl_seconds=3600, final_after_days=3, now=None)``
+``FinMindCache(cache_dir, ttl_seconds=3600, final_after_days=3, max_age_days=14, now=None)``
+
+各參數的實際值由 ``backend/app/config.py`` 的 ``Settings`` 統一管理（``CACHE_*``），
+這裡的預設值只供單獨使用/測試。
 
 - ``cache_dir``：快取檔目錄（預設用 ``data/cache/``，已被 git 忽略），不存在會自動建立
 - ``ttl_seconds``：「近期資料」的有效秒數，過期就重抓
 - ``final_after_days``：查詢區間的結束日 <= 今天 - N 天，視為「已定案的歷史資料」，
   永久有效、不再重抓（FinMind 當天/隔天的資料可能尚未更新完整，所以留緩衝天數）
+- ``max_age_days``：建立實例時自動刪除超過N天未更新（依檔案修改時間）的快取檔。
+  大部分查詢的結束日每天不同，舊檔不會再被讀到，不清理會一直累積；
+  誤刪的代價只是重抓一次。需 >= 新聞回溯天數，否則仍在用的新聞檔會被刪掉重抓
 - ``now``：回傳目前時間的函式，供測試注入；預設 ``datetime.now``
 
 快取鍵與有效期
@@ -53,6 +59,7 @@ class FinMindCache:
         cache_dir: str | Path,
         ttl_seconds: int = 3600,
         final_after_days: int = 3,
+        max_age_days: int = 14,
         now: Callable[[], datetime] | None = None,
     ) -> None:
         self._dir = Path(cache_dir)
@@ -60,6 +67,7 @@ class FinMindCache:
         self._ttl = timedelta(seconds=ttl_seconds)
         self._final_after_days = final_after_days
         self._now = now or datetime.now
+        self._remove_older_than(timedelta(days=max_age_days))
 
     def get(self, dataset: str, params: dict) -> pd.DataFrame | None:
         path = self._path(dataset, params)
@@ -78,6 +86,12 @@ class FinMindCache:
     def set(self, dataset: str, params: dict, df: pd.DataFrame) -> None:
         with self._path(dataset, params).open("wb") as f:
             pickle.dump((self._now(), df), f)
+
+    def _remove_older_than(self, max_age: timedelta) -> None:
+        cutoff = (self._now() - max_age).timestamp()
+        for path in self._dir.glob("*.pkl"):
+            if path.stat().st_mtime < cutoff:
+                path.unlink(missing_ok=True)
 
     def _is_final(self, params: dict) -> bool:
         range_end = params.get("end_date") or params.get("start_date")

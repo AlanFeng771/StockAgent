@@ -51,7 +51,7 @@ StockAgent/
 ├── backend/
 │   ├── app/
 │   │   ├── main.py                # FastAPI入口 + APScheduler啟動(lifespan)
-│   │   ├── config.py              # pydantic-settings讀.env
+│   │   ├── config.py              # 設定統一管理處（pydantic-settings讀.env）：外部服務key、DB、快取等執行參數；分析門檻值另放signals/config.py
 │   │   ├── data_sources/
 │   │   │   ├── finmind_client.py  # 封裝FinMind SDK，每dataset一個method
 │   │   │   └── cache.py           # FinMind原始回應的本機檔案快取
@@ -86,6 +86,7 @@ StockAgent/
 │   │   ├── explore_finmind.py     # Stage1用：人工探索FinMind真實回傳格式，非TDD範圍
 │   │   └── analyze_one.py         # Stage3/4用：CLI單股驗證腳本
 │   └── tests/
+│       ├── test_config.py
 │       ├── test_finmind_client.py
 │       ├── test_finmind_cache.py
 │       ├── test_price_adjust.py
@@ -276,9 +277,11 @@ DATABASE_URL=sqlite:///./data/stockagent.db
   - 快取鍵＝dataset＋呼叫參數；存SDK原始回應（正規化前），pickle 存於 `data/cache/`
   - 查詢區間結束日 <= 今天 − `final_after_days`（預設3天）→ 視為已定案歷史資料，永久有效；否則 `ttl_seconds`（預設1小時）內有效
   - 例外不快取；空結果要快取（假日無新聞是有效結果）；快取檔損毀視為未命中並刪除
+  - 建立快取時自動刪除超過 `max_age_days`（預設14天，需 >= 新聞回溯天數）未更新的檔案；大部分查詢結束日每天不同，舊檔不會再被讀到（實測單股一次完整分析約14檔、84KB）
+  - 所有參數由 `config.py` 的 `Settings` 統一管理（`CACHE_DIR`/`CACHE_TTL_SECONDS`/`CACHE_FINAL_AFTER_DAYS`/`CACHE_MAX_AGE_DAYS`），`create_finmind_client()` 依設定建立；相對路徑以專案根目錄為基準
 - **效益來源**：價格/法人等「一次呼叫可查任意區間」的dataset，當日首跑仍需呼叫（最新幾天未定案），省的是**重跑**；新聞逐日呼叫，已定案的日子永久命中，首跑也省
 - **驗收**：
-  - [x] `uv run pytest` 全過（52 passed）
+  - [x] `uv run pytest` 全過（60 passed）
   - [x] 真實API實測：同一組查詢（股價/法人/除權息/7天新聞）首跑 10 次呼叫，重跑 0 次、結果一致
 
 ### Stage 2：規則訊號層（技術／籌碼／基本面）
