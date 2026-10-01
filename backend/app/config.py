@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o"
     openai_temperature: float = 0.2      # 偏低以提高同一份事實重跑時結論的一致性
     openai_timeout_seconds: float = 60.0
+    openai_repair_attempts: int = 1      # 報告有價格警告時，回饋給 LLM 自動修正的最多次數（0 = 不修正）
 
     # 排程（Stage 6，目前延後）
     daily_analysis_hour: int = 17

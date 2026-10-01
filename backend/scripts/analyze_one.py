@@ -84,6 +84,10 @@ def main() -> None:
     print("\n【資料限制】")
     for item in r.data_limitations or ["（無）"]:
         print(f"  - {item}")
+    if result.repair_attempts:
+        print(f"\n（已自動修正 {result.repair_attempts} 次；修正前的警告：）")
+        for warning in result.initial_warnings:
+            print(f"  - {warning}")
     if result.warnings:
         print("\n⚠ 價格驗證警告：")
         for warning in result.warnings:

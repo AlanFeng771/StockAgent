@@ -281,3 +281,104 @@ def test_exit_not_above_highest_entry_warns(signals):
     warnings = generate_report(signals, client=FakeClient(parsed=report), settings=settings()).warnings
 
     assert any("賣點" in w and "不高於最高買點" in w for w in warnings)
+
+
+# ---------------------------------------------------------------------------
+# 自動修正（C 方案）：有警告時把警告回饋給 LLM 重產一次
+# ---------------------------------------------------------------------------
+
+class SequenceClient:
+    """依序回傳多個結果；元素為 StockReport 或 Exception。"""
+
+    def __init__(self, *responses, usage=(1000, 200)):
+        self.calls = []
+        self._responses = list(responses)
+        self._usage = usage
+        self.chat = SimpleNamespace(completions=SimpleNamespace(parse=self._parse))
+
+    def _parse(self, **kwargs):
+        self.calls.append(kwargs)
+        response = self._responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        message = SimpleNamespace(parsed=response, refusal=None, content=None)
+        usage = SimpleNamespace(prompt_tokens=self._usage[0], completion_tokens=self._usage[1])
+        return SimpleNamespace(choices=[SimpleNamespace(message=message, finish_reason="stop")], usage=usage)
+
+
+def bad_and_good(signals):
+    close, supports, resistances = levels_of(signals)
+    bad = make_report(signals, entry_price=supports[0], stop_loss=None)   # 有買點沒停損
+    good = make_report(signals, entry_price=supports[0])                  # 預設一致
+    return bad, good
+
+
+def test_warnings_trigger_one_repair_and_use_repaired_report(signals):
+    bad, good = bad_and_good(signals)
+    client = SequenceClient(bad, good)
+
+    result = generate_report(signals, client=client, settings=settings())
+
+    assert len(client.calls) == 2
+    assert result.report == good
+    assert result.warnings == []
+    assert result.repair_attempts == 1
+    assert any("未給停損價" in w for w in result.initial_warnings)
+    assert (result.prompt_tokens, result.completion_tokens) == (2000, 400)
+
+
+def test_repair_request_contains_previous_report_and_warnings(signals):
+    bad, good = bad_and_good(signals)
+    client = SequenceClient(bad, good)
+
+    generate_report(signals, client=client, settings=settings())
+
+    first, second = client.calls
+    assert second["messages"][:2] == first["messages"]
+    assistant, user = second["messages"][2:]
+    assert assistant["role"] == "assistant"
+    assert StockReport.model_validate_json(assistant["content"]) == bad
+    assert user["role"] == "user" and "未給停損價" in user["content"] and "$warnings" not in user["content"]
+
+
+def test_no_warnings_no_repair(signals):
+    client = SequenceClient(make_report(signals))
+
+    result = generate_report(signals, client=client, settings=settings())
+
+    assert len(client.calls) == 1
+    assert result.repair_attempts == 0
+    assert result.initial_warnings == []
+
+
+def test_repair_disabled_by_settings(signals):
+    bad, good = bad_and_good(signals)
+    client = SequenceClient(bad, good)
+
+    result = generate_report(signals, client=client, settings=settings().model_copy(update={"openai_repair_attempts": 0}))
+
+    assert len(client.calls) == 1
+    assert result.report == bad
+    assert result.warnings
+
+
+def test_still_invalid_after_repair_stops_after_limit(signals):
+    bad, _ = bad_and_good(signals)
+    client = SequenceClient(bad, bad, bad)
+
+    result = generate_report(signals, client=client, settings=settings())
+
+    assert len(client.calls) == 2  # 預設最多修正 1 次
+    assert result.repair_attempts == 1
+    assert any("未給停損價" in w for w in result.warnings)
+
+
+def test_repair_call_failure_keeps_original_report(signals):
+    bad, _ = bad_and_good(signals)
+    client = SequenceClient(bad, RuntimeError("timeout"))
+
+    result = generate_report(signals, client=client, settings=settings())
+
+    assert result.llm_status == "success"
+    assert result.report == bad
+    assert any("自動修正失敗" in w for w in result.warnings)

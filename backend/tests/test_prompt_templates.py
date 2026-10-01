@@ -62,3 +62,37 @@ def test_real_stock_report_prompt_loads():
 
     assert "只能根據事實清單推論" in prompt.system
     assert "$facts" in prompt.user_template
+
+
+def test_extra_templates_are_loaded_and_rendered(tmp_path):
+    folder = write_prompt(tmp_path)
+    (folder / "repair.md").write_text("請修正：$warnings", encoding="utf-8")
+
+    prompt = load_prompt("demo", tmp_path)
+
+    assert set(prompt.templates) == {"user", "repair"}
+    assert prompt.render("repair", warnings="- A") == "請修正：- A"
+    assert prompt.has("repair") and not prompt.has("other")
+
+
+def test_version_covers_extra_templates(tmp_path):
+    folder = write_prompt(tmp_path)
+    (folder / "repair.md").write_text("v1 $warnings", encoding="utf-8")
+    first = load_prompt("demo", tmp_path).version
+    (folder / "repair.md").write_text("v2 $warnings", encoding="utf-8")
+
+    assert load_prompt("demo", tmp_path).version != first
+
+
+def test_unknown_template_raises(tmp_path):
+    write_prompt(tmp_path)
+
+    with pytest.raises(KeyError):
+        load_prompt("demo", tmp_path).render("repair", warnings="x")
+
+
+def test_real_stock_report_has_repair_template():
+    prompt = load_prompt("stock_report")
+
+    assert prompt.has("repair")
+    assert "$warnings" in prompt.templates["repair"]
