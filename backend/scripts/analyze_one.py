@@ -5,6 +5,7 @@
 使用方式：
     uv run python backend/scripts/analyze_one.py 2330            # 實際呼叫 OpenAI（會產生費用）
     uv run python backend/scripts/analyze_one.py 2330 --dry-run  # 只印出要送給 LLM 的 prompt，不呼叫 API
+    uv run python backend/scripts/analyze_one.py 2330 --save     # 分析後存入資料庫（每次分析都保留一筆）
 """
 
 from __future__ import annotations
@@ -16,6 +17,8 @@ from datetime import date
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from backend.app.data_sources.finmind_client import create_finmind_client  # noqa: E402
+from backend.app.db.crud import save_report  # noqa: E402
+from backend.app.db.database import get_session_factory  # noqa: E402
 from backend.app.llm.prompt_templates import load_prompt  # noqa: E402
 from backend.app.llm.report_generator import build_facts  # noqa: E402
 from backend.app.pipeline.analyze_stock import AnalysisError, DataSourceError, analyze_stock  # noqa: E402
@@ -50,6 +53,10 @@ def main() -> None:
         return
 
     result = analysis.report
+    if "--save" in sys.argv:
+        with get_session_factory()() as session:
+            row = save_report(session, analysis)
+        print(f"已存入資料庫（analysis_report id={row.id}）")
     print(f"{stock_id} 分析日期 {analysis.analysis_date}（股價最新一筆）")
     print(f"狀態：{result.llm_status}｜模型 {result.model}｜prompt 版本 {result.prompt_version}"
           f"｜tokens 輸入 {result.prompt_tokens} / 輸出 {result.completion_tokens}")

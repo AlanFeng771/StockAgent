@@ -353,12 +353,17 @@ DATABASE_URL=sqlite:///./data/stockagent.db
   - [x] `uv run pytest backend/tests/test_pipeline.py` 全過（全部 313 passed）
   - [x] `scripts/analyze_one.py` 端到端人工跑通（2026-10-01 使用者跑 2330 成功）
 
-### Stage 5：資料庫層
+### Stage 5：資料庫層 ✅ 已完成
 - **規格**：SQLAlchemy models 的 schema（見核心設計重點）；CRUD 函式的行為contract，例如「新增重複 stock_id 時要忽略還是報錯」需先拍板寫進規格
 - **測試**：用 SQLite in-memory 測試每個 CRUD 函式的正常與例外情境
 - **實作**：`db/models.py`／`database.py`／`crud.py`
+  - **使用者確認的行為（2026-10-01）**：①重複新增啟用中的股票 → `WatchlistAlreadyExistsError`（聊天時 LLM 才能如實告知）②移除後再加回 → 恢復原紀錄、不新增第二筆 ③報告保留可追溯欄位：model、prompt_version、warnings、initial_warnings、repair_attempts、token 用量 ④**每次分析都保留**（不做同日覆蓋，prompt 會持續調整需比較新舊版），查詢預設取最新；歷史查詢預設每天一份、`all_runs=True` 列出每次重跑
+  - 股票代號一律正規化並驗證（4~6 位數字＋可選 1 字母），擋下 LLM 工具或 API 傳入的怪字串
+  - SQLite：WAL、busy_timeout 5 秒、`check_same_thread=False`（第一輪風險檢討的並發寫入問題）；`.gitignore` 補上 WAL 產生的 `-wal`、`-shm` 檔
+  - MVP 不做 migration（之後改 schema 再評估 Alembic）；`AnalysisRun`、`TradingCalendar` 隨 Stage 6 延後
+  - `analyze_one.py --save` 可把手動分析存入資料庫
 - **驗收**：
-  - [ ] `uv run pytest backend/tests/test_crud.py` 全過
+  - [x] `uv run pytest backend/tests/test_crud.py` 全過（全部 359 passed）
 
 ### Stage 6：排程層 ⏸ 延後（2026-10-01 使用者決定：先實現功能，自動排程最後再做）
 > 延後期間一律以手動觸發（`analyze_one.py`、`POST /api/analysis/run`）執行分析。手動觸發的 `as_of_date` 簡化為「抓到的股價資料最新一筆日期」，不依賴交易日曆，也自然避開盤中或假日觸發時拿不到當天資料的問題。以下規格保留，恢復時沿用。
