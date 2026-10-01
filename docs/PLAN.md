@@ -312,7 +312,7 @@ DATABASE_URL=sqlite:///./data/stockagent.db
   - [x] `uv run pytest` 全過（262 passed，`-W error::DeprecationWarning` 亦通過），每個規則函式至少涵蓋一個邊界case
   - [x] 真實資料人工驗證腳本：`verify_price_adjust.py` / `verify_technical.py` / `verify_chip.py` / `verify_fundamental.py` / `verify_signals.py`
 
-### Stage 3：LLM判斷層（程式完成，待使用者以真實 Key 人工驗收）
+### Stage 3：LLM判斷層 ✅ 已完成
 - **已拍板（2026-10-01）**：模型先用 `gpt-4o`（`.env` 的 `OPENAI_MODEL`，可替換）
 - **prompt 長度實測**（緊湊 JSON）：2330 約 7.9K 字元，其中新聞佔 57%，而新聞中連結又佔一半以上（2,319 字元，標題只有 908）。建議：送給 LLM 時不含新聞連結（連結保留在報告供網頁顯示）、JSON 不縮排 → 2330 約 5.5K 字元
 - **規格**：定義丟給 ChatGPT 的輸入（事實清單 JSON schema）與輸出（買點/賣點/風險/長期與否/判斷依據/信心程度的 JSON schema），用 OpenAI Structured Outputs 強制格式
@@ -332,16 +332,19 @@ DATABASE_URL=sqlite:///./data/stockagent.db
     - 連帶修正 price_levels bug：價位四捨五入到升降單位可能跨過現價（現價 110.85、支撐 110.84 → 111.0）；改為支撐無條件捨去、壓力無條件進位
     - 修正後 2454 重跑：目標價 5305（布林上軌）、停損 4730（MA20），無警告
   - [x] mock測試全過（303 passed）
-  - [ ] 用真實Key人工跑 `analyze_one.py 2330`，人工檢視報告品質與格式（此項無法自動化，為人工驗收；`.env` 的 OPENAI_API_KEY 目前仍是範例值）
+  - [x] 用真實Key人工跑 `analyze_one.py`，人工檢視報告品質與格式（2026-10-01 使用者多檔試跑，目標價/停損價問題修正後確認 OK）
 
-### Stage 4：Pipeline 整合
+### Stage 4：Pipeline 整合（程式完成，待使用者端到端人工驗收）
 - **規格**：`analyze_stock(stock_id, as_of_date) -> AnalysisReport`，串接 Stage1-3；定義單支股票分析失敗時要拋出什麼例外，供上層（排程/API）決定如何處理
   - **資料新鮮度**：逐dataset檢查最新一筆date，產出 `data_freshness`（例：`{price: "2026-10-01", margin: "2026-09-30"}`）存入報告並當事實餵給LLM；股價本身不是 as_of_date 時不呼叫LLM（交給排程層判斷延遲/休市/個股停牌）
   - 依 `signals/config.py` 的回溯期間抓資料
 - **測試**：mock掉 FinMind 與 OpenAI 兩層的整合測試，驗證資料流與呼叫順序正確
 - **實作**：`pipeline/analyze_stock.py`
+  - **例外定義（2026-10-01）**：`AnalysisError` 基底；`StockNotFoundError`（查無代號且無股價，API 可回 404）、`NoPriceDataError`（有代號無股價，如下市）、`DataSourceError`（FinMind 錯誤，`.source_error` 保留原始例外以區分額度/token）。LLM 出錯不丟例外（`report.llm_status`）；股價不足以算技術指標（新上市）照常產出、缺的面向寫在 `unavailable`
+  - `analysis_date` ＝ 股價最新一筆日期（排程延後期間的決定）
+  - `scripts/analyze_one.py` 改走 pipeline；實測查無代號 99999 → `StockNotFoundError`，不呼叫 OpenAI
 - **驗收**：
-  - [ ] `uv run pytest backend/tests/test_pipeline.py` 全過
+  - [x] `uv run pytest backend/tests/test_pipeline.py` 全過（全部 313 passed）
   - [ ] `scripts/analyze_one.py` 端到端人工跑通
 
 ### Stage 5：資料庫層
