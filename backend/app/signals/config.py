@@ -61,6 +61,9 @@
 - 單季毛利率較去年同季增減 > ``gross_margin_change_pp``（2 個百分點）
 - 本益比在近一年的百分位 < ``per_low_percentile``（20）偏多、> ``per_high_percentile``（80）偏空；
   有效天數 < ``per_min_days``（60）不判斷；殖利率只列數值
+
+彙整（signal_builder）
+- 新聞最多保留 ``news_max_items``（20）則最新標題給 LLM，控制 prompt 長度
 """
 
 from __future__ import annotations
@@ -129,6 +132,7 @@ class SignalParams:
     per_low_percentile: float = 20.0
     per_high_percentile: float = 80.0
     per_min_days: int = 60
+    news_max_items: int = 20
 
 
 LOOKBACK = LookbackDays()

@@ -286,7 +286,7 @@ DATABASE_URL=sqlite:///./data/stockagent.db
   - [x] 真實API實測：同一組查詢（股價/法人/除權息/7天新聞）首跑 10 次呼叫，重跑 0 次、結果一致
   - [x] 使用者人工驗證（2026-10-01）：pytest 62 passed；`explore_finmind.py` 帶真實token無ERROR、欄位與規格一致、額度上限600；無效token各項皆為 `FinMindAuthError`；`verify_cache.py` 連跑兩次首跑14次呼叫、重跑0次
 
-### Stage 2：規則訊號層（技術／籌碼／基本面）
+### Stage 2：規則訊號層（技術／籌碼／基本面）✅ 已完成
 - **規格**：逐一定義每個指標/訊號函式的輸入輸出與邊界，例如「MA5從下方穿越到上方MA20的當天才算golden_cross=true，持平不算、資料不足回傳None」；所有門檻值集中寫入 `signals/config.py`
   - **還原股價**（`indicators/price_adjust.py`）：每個除權息/面額變更事件的調整係數 = `參考價 / 前一日收盤價`（除權息用 `reference_price/before_price`，面額變更用 `after_price/before_price`），事件日**之前**的 OHLC 全部乘上係數（多事件連乘）；**最新一筆必等於原始價**。技術指標一律吃還原價；買賣點等「價位」與顯示用原始價。成交量只在面額變更/分割時反向調整（6763 分割後日量從約13萬股跳到231萬股）；配股因結果表未拆出股票股利比例，暫不調整成交量
     - ✅ 已完成（`indicators/price_adjust.py`，16 個測試）。真實資料驗證（`scripts/verify_price_adjust.py`）：6763 面額變更日原始漲跌 −90.51% → 還原 −5.09%；0056 除息日原始 −0.80% → 還原 +1.95%（實際上漲，原始價連方向都錯）；最新一筆還原價＝原始價
@@ -299,10 +299,13 @@ DATABASE_URL=sqlite:///./data/stockagent.db
   - ✅ 基本面訊號（`signals/fundamental_signals.py`）：月營收用 revenue_year/revenue_month 定期間（實測 date 是公布月份，date=2026-01-01 是2025年12月營收）；EPS 為單季（實測第四季也是單季）；年增率>20%/<−10%、連續3個月年增成長/衰退（到達資料邊界標示「至少」）、創12個月新高、單季EPS年增>20%、EPS<0、毛利率年增減>2個百分點、本益比近一年百分位<20/>80。月營收回溯由460天改為1130天：原本只能量到3個月，實測2330實際連續≥25個月。ROE 需資產負債表，MVP 不做（2026-10-01 使用者確認）
   - 環境注意：pandas 2.3.3 + numpy 2.5.3 下建立 `pd.Timedelta(...)` 會觸發 numpy 棄用警告（未來版本會變錯誤），程式碼改用 `datetime.timedelta`
   - ETF/無財報標的：基本面訊號在資料為空時回傳 None，不丟例外
+  - ✅ 彙整（`signals/signal_builder.py`）：`build_stock_signals(stock_id, StockRawData)` → `StockSignals`（各來源 data_freshness、三面向結果、`unavailable` 明列缺的面向與原因、新聞依日期去重最多20則）；JSON 的 NaN 輸出為 null（Pydantic v2 預設，且該設定不會傳給巢狀 model，由測試把關）。真實資料：2330 三面向齊全、JSON 約 1 萬字元；0056 基本面標示「ETF 等標的屬正常」
+  - ⚠ 留給 Stage 3：FinMind 新聞含論壇貼文與關聯性低的標題（例：2330 新聞出現「被動元件概念股3002歐格準備漲停」），且新聞是外部文字，prompt 需標示為資料而非指令（第一輪風險檢討的 prompt injection 項目）
 - **測試**：針對每個函式用構造假資料寫邊界case（剛好穿越當天、穿越前一天、資料不足）；還原股價用真實事件數值當fixture（如6763面額變更491→49.1、0056除息）
 - **實作**：`indicators/price_adjust.py`／`technical.py`／`chip.py`／`fundamental.py`／`signals/signal_builder.py`
 - **驗收**：
-  - [ ] `uv run pytest backend/tests/test_price_adjust.py backend/tests/test_indicators_*.py backend/tests/test_signal_builder.py` 全過，每個規則函式至少涵蓋一個邊界case
+  - [x] `uv run pytest` 全過（201 passed，`-W error::DeprecationWarning` 亦通過），每個規則函式至少涵蓋一個邊界case
+  - [x] 真實資料人工驗證腳本：`verify_price_adjust.py` / `verify_technical.py` / `verify_chip.py` / `verify_fundamental.py` / `verify_signals.py`
 
 ### Stage 3：LLM判斷層
 - **規格**：定義丟給 ChatGPT 的輸入（事實清單 JSON schema）與輸出（買點/賣點/風險/長期與否/判斷依據/信心程度的 JSON schema），用 OpenAI Structured Outputs 強制格式
