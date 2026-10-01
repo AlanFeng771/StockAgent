@@ -28,11 +28,17 @@ def allowed_price(signals):
 
 
 def make_report(signals, entry_price=None, **overrides):
+    """預設是一份價格關係一致的報告：買點取最近支撐、停損取最低支撐、目標取最高壓力。"""
     entry = entry_price if entry_price is not None else allowed_price(signals)
+    levels = signals.price_levels
     data = {
         "summary": "測試摘要", "overall_bias": "neutral",
         "entry_points": [PricePoint(price=entry, basis="測試", condition="測試")],
-        "exit_points": [], "target_price": None, "stop_loss": None,
+        "exit_points": [],
+        "target_price": PricePoint(price=levels.resistances[-1].price, basis="t", condition="t") if levels else None,
+        "target_price_reason": "r",
+        "stop_loss": PricePoint(price=levels.supports[-1].price, basis="s", condition="s") if levels else None,
+        "stop_loss_reason": "r",
         "holding_period": "swing", "holding_period_reason": "r", "long_term_suitable": False,
         "long_term_reason": "r", "risks": ["風險"], "rationale": [], "confidence": "low",
         "confidence_reason": "r", "data_limitations": [],
@@ -168,14 +174,15 @@ def test_price_not_in_levels_produces_warning(signals):
     result = generate_report(signals, client=FakeClient(parsed=bad), settings=settings())
 
     assert result.llm_status == "success"
-    assert len(result.warnings) == 2
-    assert "12345.67" in result.warnings[0]
+    not_in_list = [w for w in result.warnings if "不在提供的價位清單" in w]
+    assert len(not_in_list) == 2
+    assert "12345.67" in not_in_list[0]
 
 
 def test_close_chart_price_and_fill_price_are_allowed(signals):
     levels = signals.price_levels
     allowed = [levels.close] + [lv.chart_price for lv in levels.supports + levels.resistances if lv.chart_price]
-    report = make_report(signals, exit_points=[PricePoint(price=p, basis="x", condition="x") for p in allowed])
+    report = make_report(signals, entry_points=[PricePoint(price=p, basis="x", condition="x") for p in allowed])
 
     result = generate_report(signals, client=FakeClient(parsed=report), settings=settings())
 
@@ -189,3 +196,74 @@ def test_prices_without_price_levels_warn():
     result = generate_report(no_levels, client=FakeClient(parsed=report), settings=settings())
 
     assert result.warnings and "價位清單" in result.warnings[0]
+
+
+# ---------------------------------------------------------------------------
+# 價格關係檢查（實測 2454：有買點卻沒給停損/目標價，且賣點在現價下方的語意矛盾）
+# ---------------------------------------------------------------------------
+
+def point(price):
+    return PricePoint(price=price, basis="測試", condition="測試")
+
+
+def levels_of(signals):
+    lv = signals.price_levels
+    return lv.close, [x.price for x in lv.supports], [x.price for x in lv.resistances]
+
+
+def test_entry_without_stop_loss_warns_when_support_below_exists(signals):
+    close, supports, resistances = levels_of(signals)
+    report = make_report(signals, entry_price=supports[0], target_price=point(resistances[0]), stop_loss=None)
+
+    result = generate_report(signals, client=FakeClient(parsed=report), settings=settings())
+
+    assert any("未給停損價" in w for w in result.warnings)
+
+
+def test_missing_target_warns_when_resistance_above_exists(signals):
+    close, supports, resistances = levels_of(signals)
+    report = make_report(signals, entry_price=supports[0], stop_loss=point(supports[-1]), target_price=None)
+
+    result = generate_report(signals, client=FakeClient(parsed=report), settings=settings())
+
+    assert any("未給目標價" in w for w in result.warnings)
+
+
+def test_consistent_report_has_no_warnings(signals):
+    close, supports, resistances = levels_of(signals)
+    report = make_report(
+        signals, entry_price=supports[0], stop_loss=point(supports[-1]), target_price=point(resistances[-1]),
+        exit_points=[point(resistances[0])],
+    )
+
+    result = generate_report(signals, client=FakeClient(parsed=report), settings=settings())
+
+    assert result.warnings == []
+
+
+def test_price_relationship_warnings(signals):
+    close, supports, resistances = levels_of(signals)
+    report = make_report(
+        signals, entry_price=supports[-1],
+        stop_loss=point(supports[0]),          # 停損高於買點
+        target_price=point(supports[1]),       # 目標價低於現價
+        exit_points=[point(supports[0])],      # 賣點低於現價
+    )
+
+    warnings = generate_report(signals, client=FakeClient(parsed=report), settings=settings()).warnings
+
+    assert any("停損價" in w and "不低於" in w for w in warnings)
+    assert any("目標價" in w and "不高於現價" in w for w in warnings)
+    assert any("賣點" in w and "不高於現價" in w for w in warnings)
+
+
+def test_no_entry_and_not_recommended_does_not_require_target_or_stop(signals):
+    report = make_report(signals, entry_points=[], holding_period="not_recommended")
+
+    result = generate_report(signals, client=FakeClient(parsed=report), settings=settings())
+
+    assert result.warnings == []
+
+
+def test_reason_fields_exist_in_schema():
+    assert {"target_price_reason", "stop_loss_reason"} <= set(StockReport.model_fields)

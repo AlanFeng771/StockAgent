@@ -20,7 +20,8 @@
 
 每個價位 ``PriceLevel``
 -----------------------
-- ``price``：還原價對齊升降單位後的合法掛單價（``ticks.round_to_tick``）
+- ``price``：還原價對齊升降單位後的合法掛單價（``ticks.round_to_tick``）；支撐無條件捨去、
+  壓力無條件進位，確保對齊後支撐 <= 現價 <= 壓力
 - ``adjusted_price``：對齊前的還原價
 - ``chart_price``：看盤軟體（原始價）上顯示的價格，只在該價位的日期之後到最新日之間發生
   **除權息**時提供，形成「解套賣壓 / 支撐區間」：還原價（把股息算進去的投資人）～原始價
@@ -126,8 +127,9 @@ def build_price_levels(
     for (adjusted, chart, when), sources in merged.items():
         if pd.isna(adjusted) or adjusted == close:
             continue
+        mode = "down" if adjusted < close else "up"
         level = PriceLevel(
-            source="、".join(sources), price=round_to_tick(adjusted, kind), adjusted_price=adjusted,
+            source="、".join(sources), price=round_to_tick(adjusted, kind, mode), adjusted_price=adjusted,
             chart_price=chart, date=when, distance_pct=pct_change(close, adjusted),
         )
         (supports if adjusted < close else resistances).append(level)

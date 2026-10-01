@@ -60,7 +60,9 @@ def main() -> None:
     show("買點", r.entry_points)
     show("賣點", r.exit_points)
     show("目標價", [r.target_price] if r.target_price else [])
+    print(f"  理由：{r.target_price_reason}")
     show("停損價", [r.stop_loss] if r.stop_loss else [])
+    print(f"  理由：{r.stop_loss_reason}")
     print(f"\n【建議持有】{HOLDING[r.holding_period]}：{r.holding_period_reason}")
     print(f"【適合長期投資】{'是' if r.long_term_suitable else '否'}：{r.long_term_reason}")
     print("\n【風險】")
@@ -73,7 +75,7 @@ def main() -> None:
     for item in r.data_limitations or ["（無）"]:
         print(f"  - {item}")
     if result.warnings:
-        print("\n⚠ 價格驗證警告（不在提供的價位清單中）：")
+        print("\n⚠ 價格驗證警告：")
         for warning in result.warnings:
             print(f"  - {warning}")
 

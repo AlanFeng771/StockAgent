@@ -24,8 +24,11 @@ LLM 也無法開啟；連結仍保留在 StockSignals 供網頁顯示），以�
   - ``success``：取得報告
 - ``report``：成功時為 ``StockReport``，其餘 None
 - ``error``：失敗/待處理的原因
-- ``warnings``：報告中**不在允許清單內的價格**（允許：price_levels 各價位的 price、chart_price、
-  現價 close、填息價 fill_price；比較到小數 2 位）；沒有 price_levels 卻給了價格也列入
+- ``warnings``：
+  - 報告中**不在允許清單內的價格**（允許：price_levels 各價位的 price、chart_price、
+    現價 close、填息價 fill_price；比較到小數 2 位）；沒有 price_levels 卻給了價格也列入
+  - 價格關係：有買點卻沒停損（且買點下方有支撐可用）、想持有卻沒目標價（且上方有壓力可用）、
+    停損價 >= 最低買點、目標價 <= 現價或 <= 最高買點、賣點 <= 現價（跌破出場屬於停損）
 - ``model`` / ``prompt_version``：使用的模型與 prompt 版本（可追溯）
 - ``prompt_tokens`` / ``completion_tokens``：API 回傳的用量，沒有時為 None
 """
@@ -127,7 +130,34 @@ def _price_warnings(report: StockReport, signals: StockSignals) -> list[str]:
             allowed.add(round(level.chart_price, 2))
     if levels.fill_gap:
         allowed.add(round(levels.fill_gap.fill_price, 2))
-    return [
+    warnings = [
         f"{label} {p.price}（{p.basis}）不在提供的價位清單中"
         for label, p in points if round(p.price, 2) not in allowed
     ]
+    return warnings + _relationship_warnings(report, levels)
+
+
+def _relationship_warnings(report: StockReport, levels) -> list[str]:
+    """價格之間的關係與「有可用價位卻留空」（實測 gpt-4o 會在有價位時仍給 null）。"""
+    warnings = []
+    close = levels.close
+    entries = [p.price for p in report.entry_points]
+    lowest_entry = min(entries) if entries else None
+
+    if entries and report.stop_loss is None and any(lv.price < lowest_entry for lv in levels.supports):
+        warnings.append("有買點但未給停損價（買點下方有支撐價位可用）")
+    wants_position = bool(entries) or report.holding_period != "not_recommended"
+    if wants_position and report.target_price is None and levels.resistances:
+        warnings.append("未給目標價（現價上方有壓力價位可用）")
+
+    if report.stop_loss and lowest_entry is not None and report.stop_loss.price >= lowest_entry:
+        warnings.append(f"停損價 {report.stop_loss.price} 不低於最低買點 {lowest_entry}")
+    if report.target_price:
+        if report.target_price.price <= close:
+            warnings.append(f"目標價 {report.target_price.price} 不高於現價 {close}")
+        elif entries and report.target_price.price <= max(entries):
+            warnings.append(f"目標價 {report.target_price.price} 不高於最高買點 {max(entries)}")
+    for p in report.exit_points:
+        if p.price <= close:
+            warnings.append(f"賣點 {p.price}（{p.basis}）不高於現價 {close}；跌破出場應放在停損價")
+    return warnings

@@ -325,7 +325,13 @@ DATABASE_URL=sqlite:///./data/stockagent.db
     - `llm/report_generator.py`：事實清單去掉新聞連結、緊湊 JSON；`chat.completions.parse` + Structured Outputs（openai SDK 3.22.1 實測可用）；沒有 Key 或仍是範例值 → pending、API錯誤/拒答/無法解析 → failed，皆不丟例外；**價格事後驗證**，不在價位清單者列入 warnings
     - `pipeline/fetch.py`：依回溯期間抓齊原始資料（Stage 4 共用）
     - `scripts/analyze_one.py`：`--dry-run` 只印 prompt 不呼叫 API；2330 prompt 約 system 1.4K + 事實 6.5K 字元
-  - [x] mock測試全過（286 passed）
+  - **使用者試跑回饋（2026-10-01）**：多檔股票目標價、停損價皆為空。實測確認資料面每檔都有可用價位（2330/0056/2454/2317 上下皆有），是 prompt 只寫「沒有合適價位時給 null」導致 gpt-4o 一律留空；同時發現賣點語意矛盾（2454 賣點 5055 在現價 4980 之上卻寫「跌破出場」）。修正：
+    - prompt 明訂必填條件：有買點必給停損（取最低買點下方支撐）、想持有必給目標價（取現價與買點上方壓力）、賣點必須高於現價、跌破出場歸停損
+    - schema 新增 `target_price_reason` / `stop_loss_reason`，留空也要說明原因
+    - 程式檢查價格關係（有可用價位卻留空、停損 >= 買點、目標 <= 現價或買點、賣點 <= 現價）列入 warnings
+    - 連帶修正 price_levels bug：價位四捨五入到升降單位可能跨過現價（現價 110.85、支撐 110.84 → 111.0）；改為支撐無條件捨去、壓力無條件進位
+    - 修正後 2454 重跑：目標價 5305（布林上軌）、停損 4730（MA20），無警告
+  - [x] mock測試全過（303 passed）
   - [ ] 用真實Key人工跑 `analyze_one.py 2330`，人工檢視報告品質與格式（此項無法自動化，為人工驗收；`.env` 的 OPENAI_API_KEY 目前仍是範例值）
 
 ### Stage 4：Pipeline 整合

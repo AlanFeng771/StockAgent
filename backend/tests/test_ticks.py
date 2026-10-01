@@ -40,3 +40,19 @@ def test_round_to_tick(price, kind, expected):
 def test_round_result_has_no_float_noise():
     # 0.1 級距的價位用浮點運算容易產生 53.300000000000004
     assert repr(round_to_tick(53.33, "stock")) == "53.3"
+
+
+@pytest.mark.parametrize("price, kind, mode, expected", [
+    (2173.59, "stock", "down", 2170.0),
+    (2173.59, "stock", "up", 2175.0),
+    (2175.0, "stock", "down", 2175.0),   # 本來就合法不變
+    (2175.0, "stock", "up", 2175.0),
+    (110.84, "stock", "down", 110.5),
+    (110.84, "stock", "up", 111.0),
+    (53.4162, "fund", "down", 53.40),
+    (53.4162, "fund", "up", 53.45),
+    (30.126, "other", "down", 30.12),
+    (30.121, "other", "up", 30.13),
+])
+def test_round_to_tick_directional(price, kind, mode, expected):
+    assert round_to_tick(price, kind, mode) == expected

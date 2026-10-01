@@ -88,7 +88,7 @@ def test_prices_aligned_to_tick():
 
     assert by_source(result.supports, "MA20").price == 49.12
     assert by_source(result.supports, "MA20").adjusted_price == pytest.approx(49.123)
-    assert by_source(stock.supports, "MA20").price == 2175.0
+    assert by_source(stock.supports, "MA20").price == 2170.0  # 支撐無條件捨去
 
 
 # ---------------------------------------------------------------------------
@@ -235,3 +235,16 @@ def test_split_after_dividend_drops_fill_gap():
     result = build(make_df(), divs=dividends((DATES[20], 49.95, 48.6)), spl=splits((DATES[30], 50.0, 5.0)))
 
     assert result.fill_gap is None
+
+
+def test_tick_rounding_never_crosses_current_price():
+    # 實測問題：現價 110.85、支撐還原價 110.84，四捨五入到 0.5 會變成 111.0（高於現價）
+    close = np.full(N, 110.85)
+    result = build(make_df(close=close, ma20=110.84, ma5=110.86), kind="stock")
+
+    support = by_source(result.supports, "MA20")
+    resistance = by_source(result.resistances, "MA5")
+    assert support.price == 110.5
+    assert resistance.price == 111.0
+    assert all(lv.price <= result.close for lv in result.supports)
+    assert all(lv.price >= result.close for lv in result.resistances)

@@ -4,7 +4,9 @@
 ================================================================================
 
 Structured Outputs 的 strict 模式要求所有欄位都是必填，「可以沒有」用 ``X | None`` 表示，
-因此本檔不使用預設值。所有價格（PricePoint.price）必須取自事實清單的價位
+因此本檔不使用預設值。目標價、停損價另有 reason 欄位：實測 gpt-4o 在 prompt 只寫
+「沒有合適價位時給 null」時，即使有可用價位也一律給 null（2454：有買點、上下皆有價位仍為 null），
+要求說明理由以避免偷懶留空。所有價格（PricePoint.price）必須取自事實清單的價位
 （price_levels 的 price / chart_price、現價 close、填息價 fill_price），由
 ``report_generator`` 事後驗證，不符者列入 warnings。
 """
@@ -33,8 +35,10 @@ class StockReport(BaseModel):
     overall_bias: Literal["bullish", "bearish", "neutral"]
     entry_points: list[PricePoint] = Field(description="買點；不建議進場時為空陣列")
     exit_points: list[PricePoint] = Field(description="賣點（獲利了結或減碼）；沒有合適價位時為空陣列")
-    target_price: PricePoint | None = Field(description="目標價；上方沒有可用價位時為 null")
-    stop_loss: PricePoint | None = Field(description="停損價；沒有合適價位時為 null")
+    target_price: PricePoint | None = Field(description="目標價；只有現價上方完全沒有壓力價位時才為 null")
+    target_price_reason: str = Field(description="為什麼選這個目標價，或為什麼為 null")
+    stop_loss: PricePoint | None = Field(description="停損價；有買點時必須提供，只有買點下方完全沒有支撐價位時才為 null")
+    stop_loss_reason: str = Field(description="為什麼選這個停損價，或為什麼為 null")
     holding_period: Literal["short_term", "swing", "long_term", "not_recommended"] = Field(
         description="short_term=數日至2週、swing=數週至3個月、long_term=3個月以上、not_recommended=不建議持有"
     )
