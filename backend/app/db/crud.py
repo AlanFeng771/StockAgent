@@ -66,6 +66,10 @@ class WatchlistNotFoundError(CrudError):
     pass
 
 
+class ReportNotFoundError(CrudError):
+    """查無分析報告（API 用）。"""
+
+
 def normalize_stock_id(stock_id: str) -> str:
     normalized = (stock_id or "").strip().upper()
     if not _STOCK_ID_PATTERN.match(normalized):

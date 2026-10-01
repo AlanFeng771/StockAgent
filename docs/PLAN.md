@@ -390,12 +390,18 @@ DATABASE_URL=sqlite:///./data/stockagent.db
   - [ ] `uv run pytest backend/tests/test_scheduler_jobs.py` 全過
   - [ ] `uv run uvicorn` 啟動後，log確認排程已註冊到正確時間
 
-### Stage 7：REST API 層
+### Stage 7：REST API 層（程式完成，待使用者以 /docs 人工測試）
 - **規格**：依端點草案定義每個端點的 request/response schema 與狀態碼行為（例如新增重複股票回 409、刪除不存在股票回 404）
 - **測試**：用 FastAPI `TestClient` 寫涵蓋正常與錯誤 case 的 API 測試
-- **實作**：`api/routes_*.py`
+- **實作**：`api/routes_*.py`、`api/deps.py`、`api/schemas.py`、`main.py`（`create_app` 可注入相依）、`pipeline/jobs.py`
+  - **使用者確認（2026-10-01）**：
+    - 安全性：只綁 127.0.0.1（uvicorn 預設，勿加 `--host 0.0.0.0`）、`TrustedHostMiddleware` 擋偽造 Host（DNS rebinding）、不開 CORS（前端走 Vite proxy）、所有 POST 必須 `application/json`（擋跨站表單/text/plain 簡單請求觸發分析花費額度）
+    - 全清單分析在背景執行（202 + `GET /api/analysis/status` 查進度），單檔同步；兩者共用同一把鎖，同時只允許一個分析（409）
+  - 狀態碼：代號格式錯 422、已在清單 409、不在清單/查無代號/查無報告 404、無股價 422、FinMind 錯誤 502、非 JSON 的 POST 415、不信任的 Host 400；錯誤格式 `{"detail", "error"}`
+  - `/api/reports/today` 已依先前決定改為 `/api/reports/latest`；`/api/scheduler/status` 隨 Stage 6 延後
+  - 實測真實 server：區網 IP 連不到、偽造 Host 400、跨站表單 POST 415；資料庫第一次請求才建立
 - **驗收**：
-  - [ ] `uv run pytest backend/tests/test_api_*.py` 全過
+  - [x] `uv run pytest backend/tests/test_api_*.py` 全過（全部 394 passed）
   - [ ] `/docs` Swagger 手動測試一輪
 
 ### Stage 8：聊天工具層

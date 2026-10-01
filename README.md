@@ -8,8 +8,10 @@
 uv sync
 cp .env.example .env   # 填入 FINMIND_API_TOKEN 與 OPENAI_API_KEY
 uv run pytest
-uv run uvicorn backend.app.main:app --reload
+uv run uvicorn backend.app.main:app --reload   # 只綁 127.0.0.1；不要加 --host 0.0.0.0（API 沒有登入機制）
 ```
+
+API 文件與手動測試：啟動後開 http://127.0.0.1:8000/docs
 
 前端：
 

@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     daily_analysis_hour: int = 17
     daily_analysis_minute: int = 0
 
+    # API：只接受這些 Host 標頭（擋 DNS rebinding；搭配 uvicorn 預設只綁 127.0.0.1）
+    api_allowed_hosts: list[str] = ["127.0.0.1", "localhost"]
+
     # 資料庫
     database_url: str = f"sqlite:///{(PROJECT_ROOT / 'data' / 'stockagent.db').as_posix()}"
 
