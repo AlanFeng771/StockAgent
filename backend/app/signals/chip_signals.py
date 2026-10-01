@@ -55,6 +55,7 @@ from datetime import date
 import pandas as pd
 from pydantic import BaseModel
 
+from backend.app.signals.calc import pct_change, ratio_pct
 from backend.app.signals.config import SIGNALS, SignalParams
 from backend.app.signals.models import Signal
 
@@ -138,10 +139,10 @@ def detect_chip_signals(
         if len(margin) > n:
             base = margin.iloc[-1 - n]
             if base["margin_purchase_today_balance"]:
-                margin_change = _pct_change(base["margin_purchase_today_balance"], balance)
+                margin_change = pct_change(base["margin_purchase_today_balance"], balance)
             close_now, close_base = prices["adj_close"].get(last["date"]), prices["adj_close"].get(base["date"])
             if close_now is not None and close_base:
-                price_change = _pct_change(close_base, close_now)
+                price_change = pct_change(close_base, close_now)
         snapshot[f"margin_change_{n}d_pct"] = None if margin_change is None else float(margin_change)
         snapshot[f"price_change_{n}d_pct"] = None if price_change is None else float(price_change)
 
@@ -156,7 +157,7 @@ def detect_chip_signals(
                                               f"融資 {n} 日減少但股價上漲（籌碼沉澱）",
                                               as_of_margin, margin_change, -threshold))
 
-        ratio = round(short * 100 / balance, 10) if balance else None
+        ratio = ratio_pct(short, balance) if balance else None
         snapshot["short_margin_ratio_pct"] = ratio
         if ratio is not None and ratio > signal_params.short_margin_ratio_pct:
             signals.append(_margin_signal("high_short_margin_ratio", "neutral", "券資比偏高（有軋空可能）",
@@ -188,12 +189,6 @@ def _streak(net: pd.Series) -> int:
             break
         count += 1
     return count * last
-
-
-def _pct_change(base: float, current: float) -> float:
-    """先相減再相除並四捨五入到小數10位，避免浮點誤差讓「剛好等於門檻」被判成超過
-    （例如 1050 / 1000 − 1 = 0.05000000000000004）。"""
-    return round((current - base) / base * 100, 10)
 
 
 def _margin_signal(name, bias, description, as_of, value, threshold) -> Signal:

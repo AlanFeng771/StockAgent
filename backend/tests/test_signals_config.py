@@ -51,3 +51,8 @@ def test_rsi_thresholds_cover_every_rsi_period():
     assert tuple(period for period, _, _ in SIGNALS.rsi_thresholds) == TECHNICAL.rsi_periods
     for _, overbought, oversold in SIGNALS.rsi_thresholds:
         assert 0 < oversold < 50 < overbought < 100
+
+
+def test_month_revenue_lookback_allows_long_streaks():
+    # 實測 2330 營收年增連續 25 個月以上；15 個月資料只能量到 3 個月。月營收不論區間長短都只算 1 次 API
+    assert LOOKBACK.month_revenue >= 36 * 30

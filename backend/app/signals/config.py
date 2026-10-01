@@ -14,7 +14,8 @@
 - price：180 天（約 120 個交易日），涵蓋技術指標暖機需求（見 ``required_price_rows``）
   除權息、面額變更與股價使用同一區間（只需要股價區間內的事件）
 - institutional / margin：60 天，連續買賣超等籌碼訊號用
-- month_revenue：460 天（約 15 個月），年增率需往回比 12 個月，再加連續月數判斷
+- month_revenue：1130 天（約 37 個月），年增率需往回比 12 個月，連續成長月數最多可量到約 25 個月。
+  原本 460 天（15 個月）只能量到 3 個月，實測 2330 實際連續 25 個月以上（2026-10-01 調整）
 - financial_statement：900 天（約 2.5 年），近四季 EPS 合計的年增率需 8 季，
   加上財報公布延遲 45~90 天
 - valuation：365 天，本益比在近一年中的相對位置
@@ -51,6 +52,15 @@
 - 券資比 > ``short_margin_ratio_pct``（預設 30%）→ 訊號（neutral，交給 LLM）
 - 自營商（含避險）只列數值不產生訊號：ETF 造市避險量大且不代表看法
   （實測 0056 2026-09-30 自營商避險賣超 1,574 萬股，同日外資買超 370 萬股）
+
+基本面（2026-10-01 使用者確認；ROE 需資產負債表，MVP 先不做）
+- 月營收年增率 > ``revenue_yoy_high_pct``（20%）偏多、< ``revenue_yoy_low_pct``（−10%）偏空
+- 月營收年增率連續 ``revenue_streak_months``（3）個月為正 / 為負
+- 月營收創近 12 個月新高；月增率只列數值（季節性大）
+- 單季 EPS 年增率 > ``eps_yoy_high_pct``（20%）偏多；單季 EPS < 0 偏空
+- 單季毛利率較去年同季增減 > ``gross_margin_change_pp``（2 個百分點）
+- 本益比在近一年的百分位 < ``per_low_percentile``（20）偏多、> ``per_high_percentile``（80）偏空；
+  有效天數 < ``per_min_days``（60）不判斷；殖利率只列數值
 """
 
 from __future__ import annotations
@@ -63,7 +73,7 @@ class LookbackDays:
     price: int = 180
     institutional: int = 60
     margin: int = 60
-    month_revenue: int = 460
+    month_revenue: int = 1130
     financial_statement: int = 900
     valuation: int = 365
     news: int = 7
@@ -111,6 +121,14 @@ class SignalParams:
     chip_sum_days: int = 5
     margin_change_pct: float = 5.0
     short_margin_ratio_pct: float = 30.0
+    revenue_yoy_high_pct: float = 20.0
+    revenue_yoy_low_pct: float = -10.0
+    revenue_streak_months: int = 3
+    eps_yoy_high_pct: float = 20.0
+    gross_margin_change_pp: float = 2.0
+    per_low_percentile: float = 20.0
+    per_high_percentile: float = 80.0
+    per_min_days: int = 60
 
 
 LOOKBACK = LookbackDays()
