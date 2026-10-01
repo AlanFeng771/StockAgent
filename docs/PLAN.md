@@ -381,7 +381,7 @@ DATABASE_URL=sqlite:///./data/stockagent.db
 
 ## 開發時需要確認/拍板的細節（非阻塞，於對應 Stage 處理）
 
-- FinMind 各 dataset 確切名稱/欄位 → Stage1 已驗證；呼叫額度依官方 quickstart：匿名 300 次/小時、註冊帶token 600 次/小時；使用者帳號實際上限待用 token 跑 explore 腳本確認（`/v2/user_info` 的 `api_request_limit`）。每次全清單分析約 (7 + 新聞天數) × 股票數 + 1 次呼叫；快取已實作（見 Stage 1 快取）
+- FinMind 各 dataset 確切名稱/欄位 → Stage1 已驗證；呼叫額度依官方 quickstart：匿名 300 次/小時、註冊帶token 600 次/小時；使用者帳號實際上限已確認為 **600**（2026-10-01 用 token 跑 explore 腳本，`/v2/user_info` 的 `api_request_limit`）。每次全清單分析約 (7 + 新聞天數) × 股票數 + 1 次呼叫；快取已實作（見 Stage 1 快取）
 - 新聞相關性篩選方式（FinMind是否支援用stock_id查詢消息面）→ Stage1驗證後定案
 - 技術指標參數預設值（MA5/20/60、RSI14、KD9、MACD12/26/9、布林20±2σ）沿用業界慣例，籌碼/基本面門檻（連續買超天數、YoY成長%等）→ Stage2與使用者一起拍板
 - 各dataset每日實際更新時間 → 隨 Stage 6 延後；恢復時連續幾天於不同時段跑 explore 腳本實測，據以決定排程時間與重試截止時間
