@@ -233,13 +233,16 @@ DATABASE_URL=sqlite:///./data/stockagent.db
   - [x] `uv run pytest` 可執行（無測試案例時顯示 0 collected，不報錯）
   - [x] git log 有初始 commit
 
-### Stage 1：FinMind 資料擷取層
+### Stage 1：FinMind 資料擷取層 ✅ 已完成
 - **規格**：定義 `finmind_client.py` 各method的輸入輸出contract，例如 `get_price(stock_id, start, end) -> DataFrame[date, open, high, low, close, volume]`；其餘 `get_institutional_investors`/`get_margin_trading`/`get_financial_statement`/`get_month_revenue`/`get_news` 同樣先寫好預期欄位；並定義錯誤情境行為（token無效/額度超過/股票代號不存在時的回應）
 - **測試**：mock FinMind SDK 回傳，測試正常回應／API錯誤／空資料三種情境下是否符合規格；不打真實API
 - **實作**：`data_sources/finmind_client.py`；另外用 `scripts/explore_finmind.py`（非TDD範圍）人工跑一次真實API，確認規格寫的欄位跟實際回傳相符，有落差就回頭修正規格與測試
+- **人工驗證發現並修正的落差**：
+  - `get_news`（`taiwan_stock_news`）實際上只接受單日查詢，帶非空`end_date`會報錯；已改成client內部逐日呼叫再合併，對外介面仍維持日期範圍不變
+  - `get_news`實際回傳欄位沒有`description`，規格與實作已更正為`date, stock_id, title, link, source`
 - **驗收**：
-  - [ ] `uv run pytest backend/tests/test_finmind_client.py` 全過
-  - [ ] `explore_finmind.py` 已人工驗證過各dataset真實欄位與規格一致
+  - [x] `uv run pytest backend/tests/test_finmind_client.py` 全過（21 passed）
+  - [x] `explore_finmind.py` 已人工驗證過各dataset真實欄位與規格一致
 
 ### Stage 2：規則訊號層（技術／籌碼／基本面）
 - **規格**：逐一定義每個指標/訊號函式的輸入輸出與邊界，例如「MA5從下方穿越到上方MA20的當天才算golden_cross=true，持平不算、資料不足回傳None」；所有門檻值集中寫入 `signals/config.py`
