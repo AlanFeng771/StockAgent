@@ -18,6 +18,7 @@ import sys
 from datetime import date, timedelta
 
 from dotenv import load_dotenv
+from FinMind.data import DataLoader
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
@@ -34,6 +35,14 @@ def main() -> None:
     start_str, end_str = start.isoformat(), end.isoformat()
 
     client = FinMindClient(api_token=token)
+
+    # 額度資訊來自 /v2/user_info，需帶token才有意義（匿名呼叫兩者皆回0）
+    if token:
+        loader = DataLoader()
+        loader.login_by_token(token)
+        print(f"\n===== API額度 =====\n  已用: {loader.api_usage}  上限: {loader.api_usage_limit}")
+    else:
+        print("\n===== API額度 =====\n  未設定 FINMIND_API_TOKEN，無法查詢額度")
 
     print(f"\n===== get_news({stock_id}, {end_str}) [單日，省略end_date] =====")
     try:

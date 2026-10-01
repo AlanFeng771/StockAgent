@@ -163,7 +163,7 @@ LLM 在這層的角色是**根據結構化事實做判斷推論**，不是把數
 ### 資料庫 Schema（SQLite + SQLAlchemy）
 - `Watchlist`：stock_id, stock_name, is_active（軟刪除）
 - `AnalysisReport`：stock_id + analysis_date（唯一鍵，MVP階段同日覆蓋；analysis_date 一律為交易日）、raw_signals_json、raw_indicators_json、llm_report_json、llm_status、data_freshness_json（各dataset最新資料日期）
-- `AnalysisRun`：as_of_date、status（`success`/`skipped`/`failed`）、calendar_source（`calendar`/`weekday_fallback`）、reason——區分「確定休市而跳過」與「出錯而失敗」，補跑只重跑 failed/缺漏的交易日
+- （以下兩表隨 Stage 6 延後，Stage 5 先不建）`AnalysisRun`：as_of_date、status（`success`/`skipped`/`failed`）、calendar_source（`calendar`/`weekday_fallback`）、reason——區分「確定休市而跳過」與「出錯而失敗」，補跑只重跑 failed/缺漏的交易日
 - `TradingCalendar`：本地快取的交易日曆（每天最多向FinMind更新一次）
 - `ChatMessage`：session_id, role, content, related_stock_id
 
@@ -177,7 +177,8 @@ GET  /api/reports/{stock_id}/history?start=&end=
 GET  /api/reports/latest          # 全清單各股最新一份報告（附analysis_date），假日/當日尚未產出時回最近交易日的報告
 POST /api/chat                    # response需包含最終文字回覆 + 過程中執行的工具動作列表(actions_taken)
 GET  /api/chat/history?session_id=
-GET  /api/health, /api/scheduler/status
+GET  /api/health
+GET  /api/scheduler/status        # 隨 Stage 6 延後
 ```
 
 ---
@@ -302,7 +303,9 @@ DATABASE_URL=sqlite:///./data/stockagent.db
 - **驗收**：
   - [ ] `uv run pytest backend/tests/test_crud.py` 全過
 
-### Stage 6：排程層
+### Stage 6：排程層 ⏸ 延後（2026-10-01 使用者決定：先實現功能，自動排程最後再做）
+> 延後期間一律以手動觸發（`analyze_one.py`、`POST /api/analysis/run`）執行分析。手動觸發的 `as_of_date` 簡化為「抓到的股價資料最新一筆日期」，不依賴交易日曆，也自然避開盤中或假日觸發時拿不到當天資料的問題。以下規格保留，恢復時沿用。
+
 - **規格**：定義排程 job 的行為——單支股票失敗要記錄log但不中斷其他股票
   - **APScheduler 設定**：`BackgroundScheduler`（不可用AsyncIOScheduler跑阻塞的pipeline）、`timezone="Asia/Taipei"`、`misfire_grace_time` 數小時、`coalesce=True`（預設寬限僅1秒，睡眠剛醒會直接漏跑）
   - **啟動補跑**：FastAPI 啟動時，若最近一個已過排程時間的交易日沒有 success/skipped 的 `AnalysisRun`，於背景補跑（`as_of_date` = 該交易日，不是今天）
@@ -363,7 +366,7 @@ DATABASE_URL=sqlite:///./data/stockagent.db
 - FinMind 各 dataset 確切名稱/欄位 → Stage1 已驗證；**呼叫額度上限尚未確認**（使用者帳號實際額度待查，影響是否需要快取）
 - 新聞相關性篩選方式（FinMind是否支援用stock_id查詢消息面）→ Stage1驗證後定案
 - 技術指標參數預設值（MA5/20/60、RSI14、KD9、MACD12/26/9、布林20±2σ）沿用業界慣例，籌碼/基本面門檻（連續買超天數、YoY成長%等）→ Stage2與使用者一起拍板
-- 各dataset每日實際更新時間 → 連續幾天於不同時段跑 explore 腳本實測，據以決定排程時間與重試截止時間
+- 各dataset每日實際更新時間 → 隨 Stage 6 延後；恢復時連續幾天於不同時段跑 explore 腳本實測，據以決定排程時間與重試截止時間
 - 減資事件的還原 → 找到有減資紀錄的股票、驗證真實欄位後補進 Stage1 client 與 Stage2 還原邏輯
 - FinMind 快取 → 待 Stage2 回溯期間拍板後一併設計（新聞逐日呼叫最耗額度）
 - CRUD對重複/不存在資料的行為（新增重複股票、刪除不存在股票）→ Stage5定案並寫入規格
