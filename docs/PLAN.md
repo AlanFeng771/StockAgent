@@ -390,7 +390,7 @@ DATABASE_URL=sqlite:///./data/stockagent.db
   - [ ] `uv run pytest backend/tests/test_scheduler_jobs.py` 全過
   - [ ] `uv run uvicorn` 啟動後，log確認排程已註冊到正確時間
 
-### Stage 7：REST API 層（程式完成，待使用者以 /docs 人工測試）
+### Stage 7：REST API 層 ✅
 - **規格**：依端點草案定義每個端點的 request/response schema 與狀態碼行為（例如新增重複股票回 409、刪除不存在股票回 404）
 - **測試**：用 FastAPI `TestClient` 寫涵蓋正常與錯誤 case 的 API 測試
 - **實作**：`api/routes_*.py`、`api/deps.py`、`api/schemas.py`、`main.py`（`create_app` 可注入相依）、`pipeline/jobs.py`
@@ -401,8 +401,8 @@ DATABASE_URL=sqlite:///./data/stockagent.db
   - `/api/reports/today` 已依先前決定改為 `/api/reports/latest`；`/api/scheduler/status` 隨 Stage 6 延後
   - 實測真實 server：區網 IP 連不到、偽造 Host 400、跨站表單 POST 415；資料庫第一次請求才建立
 - **驗收**：
-  - [x] `uv run pytest backend/tests/test_api_*.py` 全過（全部 394 passed）
-  - [ ] `/docs` Swagger 手動測試一輪
+  - [x] `uv run pytest backend/tests/test_api_*.py` 全過（全部 397 passed）
+  - [x] `/docs` Swagger 手動測試一輪（使用者 2026-10-13 確認通過）
 
 ### Stage 8：聊天工具層
 - **規格**：兩類工具（清單管理、股票資訊查詢）的 input/output schema；會改變狀態的工具執行後必須在回覆中明確告知使用者
