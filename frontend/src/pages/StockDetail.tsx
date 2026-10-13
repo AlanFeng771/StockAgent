@@ -72,7 +72,7 @@ export function StockDetail({ stockId, refreshKey }: { stockId: string; refreshK
       )}
 
       {detail && signals && (
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <div className="grid gap-5 2xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
           <div className="flex flex-col gap-5">
             <ReportView summary={detail} />
             <SignalPanels signals={signals} />

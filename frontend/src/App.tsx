@@ -33,8 +33,8 @@ function BackendStatus() {
 export default function App() {
   const hash = useHash();
   const stockId = hash.match(/^#\/stock\/([0-9A-Za-z]+)$/)?.[1];
-  // 寬螢幕預設開啟聊天欄；窄螢幕預設關閉，開啟時以覆蓋面板顯示
-  const [chatOpen, setChatOpen] = useState(() => window.matchMedia("(min-width: 1024px)").matches);
+  // ≥768px 並排（預設開啟）；更窄時預設關閉，開啟時以覆蓋面板顯示
+  const [chatOpen, setChatOpen] = useState(() => window.matchMedia("(min-width: 768px)").matches);
   // 聊天中的動作（加入、確認移除/分析）完成後遞增，讓儀表板重新載入
   const [refreshKey, setRefreshKey] = useState(0);
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
@@ -63,7 +63,7 @@ export default function App() {
         </main>
         {/* 關閉時只隱藏不卸載，保留對話與輸入中的內容 */}
         <aside
-          className={`${chatOpen ? "flex" : "hidden"} fixed inset-0 z-50 flex-col bg-white shadow-xl sm:left-auto sm:w-[28rem] sm:border-l sm:border-slate-200 lg:sticky lg:inset-auto lg:top-14 lg:z-auto lg:h-[calc(100vh-3.5rem)] lg:w-96 lg:shrink-0 lg:shadow-none`}
+          className={`${chatOpen ? "flex" : "hidden"} fixed inset-0 z-50 flex-col bg-white shadow-xl md:sticky md:inset-auto md:top-14 md:z-auto md:h-[calc(100vh-3.5rem)] md:w-80 md:shrink-0 md:border-l md:border-slate-200 md:shadow-none xl:w-96`}
         >
           <ChatPanel onChanged={refresh} onClose={() => setChatOpen(false)} />
         </aside>

@@ -73,7 +73,8 @@ export function Dashboard({ refreshKey }: { refreshKey: number }) {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-3">
+      {/* 欄數依可用寬度自動決定（聊天欄開關會改變寬度） */}
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,19rem),1fr))] gap-4">
         {watchlist.map((item) => (
           <StockCard
             key={item.stock_id}
