@@ -391,3 +391,18 @@ def test_confirmation_text_ok_when_pending_created(ctx):
     reply = service(client).send(ctx, "s1", "移除2330")
 
     assert len(client.calls) == 2 and "沒有建立確認按鈕" not in reply.reply
+
+
+def test_current_watchlist_injected_every_turn(ctx):
+    # 2026-10-13 實測：使用者在儀表板加回 2330，聊天憑記憶「全部移除」漏掉它
+    client = ScriptedClient(completion("好"), completion("好"))
+    chat = service(client)
+    chat.send(ctx, "s1", "嗨")
+    assert "目前追蹤清單：（空）" in client.calls[0]["messages"][0]["content"]
+
+    crud.add_watchlist(ctx.session, "2330", "台積電")  # 聊天以外（儀表板）的變動
+    crud.add_watchlist(ctx.session, "2454", "聯發科")
+    chat.send(ctx, "s1", "再問")
+
+    system = client.calls[1]["messages"][0]["content"]
+    assert "目前追蹤清單：2330 台積電、2454 聯發科" in system

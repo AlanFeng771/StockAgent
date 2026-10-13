@@ -10,7 +10,8 @@
 1. 沒有 OpenAI key（或仍是範例值）→ ``ChatNotConfiguredError``（什麼都不寫入）；
    訊息去空白後為空或超過 ``chat_message_max_chars`` → ``ChatInputError``
 2. 處理該 session 已過期的待確認動作（寫入過期紀錄）→ 存入使用者訊息
-3. 組 messages：system prompt（含今天日期、禁止事項與引導）＋聊天摘要（若有，另一則 system）＋
+3. 組 messages：system prompt（含今天日期、**目前追蹤清單**（每輪即時查詢，避免 LLM 憑記憶漏掉儀表板上的
+   變動）、禁止事項與引導）＋聊天摘要（若有，另一則 system）＋
    未被摘要涵蓋的訊息（最多 recent + every 則；role="action" 以 assistant 身分、加「[動作紀錄]」前綴）
 4. 呼叫 ``client.chat.completions.create(model=chat_model, messages, tools, temperature, timeout)``：
    - 回覆帶 ``tool_calls`` → assistant 訊息（含 tool_calls）接回對話，逐筆分派，結果以
@@ -229,8 +230,11 @@ class ChatService:
 
     def _build_context(self, session: Session, session_id: str, now: datetime) -> list[dict]:
         forbidden = "\n".join(f"- {action.guidance}" for action in FORBIDDEN_ACTIONS)
-        system = self.prompt.system + "\n\n" + self.prompt.render("context", today=now.date().isoformat(),
-                                                                  forbidden=forbidden)
+        watchlist = "、".join(f"{row.stock_id} {row.stock_name or ''}".strip()
+                              for row in crud.get_active_watchlist(session)) or "（空）"
+        system = self.prompt.system + "\n\n" + self.prompt.render(
+            "context", today=now.date().isoformat(), forbidden=forbidden, watchlist=watchlist,
+        )
         messages = [{"role": "system", "content": system}]
         summary = session.get(ChatSummary, session_id)
         if summary is not None:

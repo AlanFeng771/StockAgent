@@ -17,15 +17,22 @@ function useHash(): string {
   return hash;
 }
 
+const HEALTH_POLL_MS = 30_000;
+
+/** 後端連線狀態：載入時與之後每 30 秒檢查一次；綠點正常、紅點連不上。 */
 function BackendStatus() {
   const [ok, setOk] = useState<boolean | null>(null);
   useEffect(() => {
-    api.health().then(() => setOk(true), () => setOk(false));
+    const check = () => api.health().then(() => setOk(true), () => setOk(false));
+    check();
+    const timer = window.setInterval(check, HEALTH_POLL_MS);
+    return () => window.clearInterval(timer);
   }, []);
   if (ok === null) return null;
   return (
-    <span className={`text-xs ${ok ? "text-slate-500" : "text-red-600"}`}>
-      {ok ? "● 後端已連線" : "● 後端未連線（請啟動 uvicorn）"}
+    <span className="flex items-center gap-1.5 text-xs text-slate-500" title="每 30 秒自動檢查">
+      <span className={`h-2 w-2 rounded-full ${ok ? "bg-green-500" : "bg-red-500"}`} />
+      {ok ? "後端已連線" : <span className="text-red-600">後端未連線（請啟動 uvicorn）</span>}
     </span>
   );
 }
@@ -42,7 +49,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
       <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-slate-200 bg-white/90 px-6 backdrop-blur">
-        <div className="flex items-baseline gap-4">
+        <div className="flex items-center gap-4">
           <a href="#/" className="text-lg font-bold tracking-tight">
             StockAgent <span className="text-sm font-normal text-slate-500">台股分析</span>
           </a>
