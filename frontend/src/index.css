@@ -1,0 +1,5 @@
+@import "tailwindcss";
+
+body {
+  font-family: "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
+}

@@ -18,7 +18,7 @@ API 文件與手動測試：啟動後開 http://127.0.0.1:8000/docs
 ```bash
 cd frontend
 npm install
-npm run dev
+npm run dev        # 開 http://127.0.0.1:5173（需先啟動後端；/api 由 Vite 轉發到 127.0.0.1:8000）
 ```
 
 ## 開發流程
