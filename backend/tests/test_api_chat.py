@@ -106,3 +106,12 @@ def test_chat_endpoints_declare_json_body_for_swagger():
 
     for path in ("/api/chat", "/api/chat/actions/{action_id}/confirm", "/api/chat/actions/{action_id}/cancel"):
         assert "application/json" in openapi[path]["post"]["requestBody"]["content"]
+
+
+def test_history_hides_tool_logs():
+    api = chat_api(completion(tool_calls=[tool_call("list_watchlist", {})]), completion("清單是空的"))
+    session_id = api.post("/api/chat", json={"message": "清單"}).json()["session_id"]
+
+    roles = [m["role"] for m in api.get("/api/chat/history", params={"session_id": session_id}).json()["messages"]]
+
+    assert roles == ["user", "assistant"]

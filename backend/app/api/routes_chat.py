@@ -16,6 +16,7 @@ from backend.app.db import crud
 
 router = APIRouter(prefix="/api/chat")
 SESSION_ID_PATTERN = r"^[A-Za-z0-9_-]{1,64}$"
+VISIBLE_ROLES = ("user", "assistant", "action")  # tool_log 只給 LLM 看
 
 
 @router.post("", response_model=ChatReply)
@@ -31,7 +32,7 @@ def history(
 ):
     return ChatHistoryOut(
         session_id=session_id,
-        messages=crud.get_chat_history(session, session_id, limit=limit),
+        messages=crud.get_chat_history(session, session_id, limit=limit, roles=VISIBLE_ROLES),
         pending_actions=list_pending_actions(session, session_id, datetime.now()),
     )
 

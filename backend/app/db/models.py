@@ -10,7 +10,8 @@
   warnings、initial_warnings、repair_attempts、token 用量
   - ``signals_json``：``StockSignals``（含技術指標快照、價位、新聞）
   - ``report_json``：``StockReport``；LLM 沒有產出時為 NULL
-- ``ChatMessage``：聊天紀錄（Stage 8）。role：user / assistant / action（確認、取消、過期危險動作的系統紀錄）
+- ``ChatMessage``：聊天紀錄（Stage 8）。role：user / assistant / action（確認、取消、過期危險動作的系統紀錄）/
+  tool_log（該輪實際呼叫的工具與結果，只給 LLM 看）
 - ``PendingAction``：危險工具的待確認動作（Stage 8）。id 為隨機字串；arguments 建立時凍結；
   status：pending → executing → done / failed，或 cancelled / expired
 - ``ChatSummary``：每個 session 一筆聊天摘要，covered_until_id 之前（含）的訊息已併入摘要

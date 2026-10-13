@@ -230,3 +230,12 @@ def test_chat_history_order_and_limit(session):
 
     assert [m.content for m in history] == ["m2", "m3", "m4"]
     assert history[0].related_stock_id == "2330"
+
+
+def test_chat_history_can_filter_roles(session):
+    for role in ("user", "tool_log", "assistant", "action"):
+        crud.add_chat_message(session, "s1", role, role)
+
+    shown = crud.get_chat_history(session, "s1", roles=("user", "assistant", "action"))
+
+    assert [m.role for m in shown] == ["user", "assistant", "action"]

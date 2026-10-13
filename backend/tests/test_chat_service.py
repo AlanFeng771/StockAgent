@@ -313,3 +313,81 @@ def test_context_capped_when_summary_keeps_failing(ctx):
     service(client).send(ctx, "s1", "嗨")
 
     assert len(client.calls[0]["messages"]) == 1 + 30  # system + 最多 recent + every 則
+
+
+# ---------------------------------------------------------------------------
+# 工具紀錄與防止謊稱（2026-10-13 實測：歷史只有文字時，LLM 模仿「請按確認」卻沒呼叫工具）
+# ---------------------------------------------------------------------------
+
+def test_tool_log_saved_and_sent_in_next_turn(ctx):
+    crud.add_watchlist(ctx.session, "2330", "台積電")
+    client = ScriptedClient(
+        completion(tool_calls=[tool_call("remove_watchlist_stock", {"stock_id": "2330"})]),
+        completion("請按確認"),
+        completion("好"),
+    )
+    chat = service(client)
+    chat.send(ctx, "s1", "移除2330")
+
+    roles = [role for role, _ in history(ctx)]
+    assert roles == ["user", "tool_log", "assistant"]
+    log = history(ctx)[1][1]
+    assert "remove_watchlist_stock" in log and "2330" in log and "待使用者確認" in log
+
+    chat.send(ctx, "s1", "下一句")
+    sent = client.calls[-1]["messages"]
+    log_message = next(m for m in sent if m["content"].startswith("[工具紀錄]"))
+    assert log_message["role"] == "assistant"
+    assert sent.index(log_message) < sent.index({"role": "assistant", "content": "請按確認"})
+
+
+def test_no_tool_log_when_no_tools(ctx):
+    service(ScriptedClient(completion("你好"))).send(ctx, "s1", "嗨")
+
+    assert [role for role, _ in history(ctx)] == ["user", "assistant"]
+
+
+def test_tool_log_records_failures(ctx):
+    client = ScriptedClient(completion(tool_calls=[tool_call("get_stock_report", {"stock_id": "2330"})]),
+                            completion("查無"))
+    service(client).send(ctx, "s1", "報告")
+
+    log = history(ctx)[1][1]
+    assert "get_stock_report" in log and "失敗" in log
+
+
+def test_false_confirmation_claim_is_retried(ctx):
+    crud.add_watchlist(ctx.session, "2330", "台積電")
+    client = ScriptedClient(
+        completion("已準備好移除，請在畫面上按下確認按鈕。"),  # 沒呼叫工具卻要使用者按確認
+        completion(tool_calls=[tool_call("remove_watchlist_stock", {"stock_id": "2330"})]),
+        completion("請按畫面上的確認按鈕"),
+    )
+
+    reply = service(client).send(ctx, "s1", "移除2330")
+
+    correction = client.calls[1]["messages"][-1]
+    assert correction["role"] == "system" and "沒有呼叫" in correction["content"]
+    assert reply.reply == "請按畫面上的確認按鈕"
+    assert len(reply.pending_actions) == 1
+
+
+def test_false_confirmation_claim_twice_gets_notice(ctx):
+    client = ScriptedClient(completion("請按確認按鈕"), completion("請按下確認"))
+
+    reply = service(client).send(ctx, "s1", "移除2330")
+
+    assert len(client.calls) == 2  # 只重試一次
+    assert reply.reply.startswith("請按下確認")
+    assert "沒有建立確認按鈕" in reply.reply
+    assert history(ctx)[-1] == ("assistant", reply.reply)
+
+
+def test_confirmation_text_ok_when_pending_created(ctx):
+    crud.add_watchlist(ctx.session, "2330", "台積電")
+    client = ScriptedClient(completion(tool_calls=[tool_call("remove_watchlist_stock", {"stock_id": "2330"})]),
+                            completion("請按下確認按鈕"))
+
+    reply = service(client).send(ctx, "s1", "移除2330")
+
+    assert len(client.calls) == 2 and "沒有建立確認按鈕" not in reply.reply

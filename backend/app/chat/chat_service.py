@@ -17,7 +17,12 @@
      ``{"role": "tool", "tool_call_id", "content": JSON}`` 接回，再呼叫一次
    - 已達 ``chat_max_tool_rounds`` 輪 → 最後一次呼叫帶 ``tool_choice="none"``，要求直接回覆（不會無限迴圈）
    - API 例外 → ``ChatLLMError``（使用者訊息已存，工具已執行的效果保留）
-5. 存入最終回覆（role="assistant"），視需要更新摘要，回傳 ``ChatReply``
+5. 防止謊稱（2026-10-13 實測 gpt-4o 會模仿歷史文字說「請按確認」卻沒呼叫工具）：最終回覆要使用者
+   按確認（``CONFIRM_CLAIM``），但本輪沒有建立待確認動作、該 session 也沒有仍有效的待確認動作 →
+   加一則 system 更正訊息重做一次；重做後仍如此 → 回覆末尾加上「本次沒有建立確認按鈕」的系統提示
+6. 本輪有呼叫工具 → 存一則 role="tool_log"（每個工具的參數與結果；只給 LLM 看，API 歷史不顯示），
+   之後組 context 時以 assistant 身分、「[工具紀錄]」前綴送出，讓 LLM 看到過去「說要按確認」前確實呼叫過工具
+7. 存入最終回覆（role="assistant"），視需要更新摘要，回傳 ``ChatReply``
 
 工具分派（回給 LLM 的 tool content 為 JSON）
 ------------------------------------------
@@ -40,6 +45,7 @@
 from __future__ import annotations
 
 import json
+import re
 import logging
 from datetime import datetime
 from typing import Any, Callable, Literal
@@ -105,8 +111,32 @@ class ChatReply(BaseModel):
 
 
 ACTION_PREFIX = "[動作紀錄] "
-ROLE_LABELS = {"user": "使用者", "assistant": "助理", "action": "動作紀錄"}
+TOOL_LOG_PREFIX = "[工具紀錄] "
+ROLE_LABELS = {"user": "使用者", "assistant": "助理", "action": "動作紀錄", "tool_log": "工具紀錄"}
 PENDING_MESSAGE = "尚未執行。已在畫面上建立確認按鈕，需使用者親自按下確認才會執行，你無法代為確認。請告知使用者按確認。"
+
+# 回覆要使用者按確認，但畫面上沒有任何確認按鈕（2026-10-13 實測 gpt-4o 會模仿歷史文字而不呼叫工具）
+CONFIRM_CLAIM = re.compile(r"確認按鈕|按下?.{0,4}確認")
+FALSE_CLAIM_CORRECTION = (
+    "系統檢查：你剛才的回覆要求使用者按確認按鈕，但這一輪你沒有呼叫任何危險動作工具，畫面上沒有確認按鈕。"
+    "若使用者要求移除或分析，請現在呼叫對應工具（多檔股票就逐一呼叫）；否則請更正回覆，不要提到確認按鈕。"
+)
+FALSE_CLAIM_NOTICE = "\n\n（系統提示：本次沒有建立確認按鈕，上述動作並未執行。）"
+STATUS_TEXT = {"executed": "已執行", "failed": "失敗", "rejected": "被拒絕", "pending_confirmation": "待使用者確認"}
+
+
+def _tool_log_text(actions: list[ActionLog]) -> str:
+    """該輪實際呼叫的工具（存成 tool_log，下一輪 LLM 才看得到「說要按確認」之前確實呼叫過工具）。"""
+    lines = []
+    for log in actions:
+        args = log.arguments if isinstance(log.arguments, str) else ", ".join(f"{k}={v}" for k, v in log.arguments.items())
+        line = f"- {log.tool}({args}) → {STATUS_TEXT[log.status]}"
+        if log.status == "pending_confirmation":
+            line += f"（已建立確認按鈕：{log.summary}）"
+        elif log.error:
+            line += f"：{log.error}"
+        lines.append(line)
+    return "\n".join(lines)
 
 
 class ChatService:
@@ -141,13 +171,21 @@ class ChatService:
         messages = self._build_context(session, session_id, now)
         actions: list[ActionLog] = []
         rounds = 0
+        corrected = False
         while True:
             allow_tools = rounds < self.settings.chat_max_tool_rounds
             reply_message = self._complete(messages, allow_tools)
             tool_calls = getattr(reply_message, "tool_calls", None) or []
             if not (tool_calls and allow_tools):
                 reply = reply_message.content or ""
-                break
+                if not self._false_confirmation_claim(reply, actions, session, session_id, now):
+                    break
+                if corrected:
+                    reply += FALSE_CLAIM_NOTICE
+                    break
+                corrected = True  # 要使用者按確認、卻沒有任何確認按鈕 → 退回重做一次
+                messages += [{"role": "assistant", "content": reply}, {"role": "system", "content": FALSE_CLAIM_CORRECTION}]
+                continue
             messages.append({"role": "assistant", "content": reply_message.content, "tool_calls": [
                 {"id": call.id, "type": "function",
                  "function": {"name": call.function.name, "arguments": call.function.arguments}}
@@ -160,6 +198,8 @@ class ChatService:
                                  "content": json.dumps(content, ensure_ascii=False)})
             rounds += 1
 
+        if actions:
+            crud.add_chat_message(session, session_id, "tool_log", _tool_log_text(actions))
         crud.add_chat_message(session, session_id, "assistant", reply)
         self._maybe_summarize(session, session_id)
         pending = list_pending_actions(session, session_id, now)
@@ -200,9 +240,21 @@ class ChatService:
             messages.append(self._to_llm_message(row))
         return messages
 
+    @staticmethod
+    def _false_confirmation_claim(
+        reply: str, actions: list[ActionLog], session: Session, session_id: str, now: datetime,
+    ) -> bool:
+        if not CONFIRM_CLAIM.search(reply):
+            return False
+        if any(log.status == "pending_confirmation" for log in actions):
+            return False
+        return not list_pending_actions(session, session_id, now)  # 之前建立、仍有效的按鈕也算
+
     def _to_llm_message(self, row: ChatMessage) -> dict:
         if row.role == "action":
             return {"role": "assistant", "content": ACTION_PREFIX + row.content}
+        if row.role == "tool_log":
+            return {"role": "assistant", "content": TOOL_LOG_PREFIX + "\n" + row.content}
         if row.role == "user":
             return {"role": "user", "content": self.prompt.render_user(message=row.content)}
         return {"role": row.role, "content": row.content}

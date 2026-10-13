@@ -32,7 +32,8 @@
 聊天紀錄
 --------
 - ``add_chat_message(session, session_id, role, content, related_stock_id=None)``
-- ``get_chat_history(session, session_id, limit=50)``：依時間由舊到新，取最後 limit 則
+- ``get_chat_history(session, session_id, limit=50, roles=None)``：依時間由舊到新，取最後 limit 則；
+  ``roles`` 只取這些角色（API 顯示用，排除只給 LLM 看的 tool_log）
 """
 
 from __future__ import annotations
@@ -203,10 +204,12 @@ def add_chat_message(
     return row
 
 
-def get_chat_history(session: Session, session_id: str, limit: int = 50) -> list[ChatMessage]:
+def get_chat_history(
+    session: Session, session_id: str, limit: int = 50, roles: tuple[str, ...] | None = None,
+) -> list[ChatMessage]:
+    query = select(ChatMessage).where(ChatMessage.session_id == session_id)
+    if roles is not None:
+        query = query.where(ChatMessage.role.in_(roles))
     # Windows 的 datetime.now 解析度有限，同時寫入的訊息時間可能相同，以 id 作為次要排序
-    newest = session.scalars(
-        select(ChatMessage).where(ChatMessage.session_id == session_id)
-        .order_by(ChatMessage.created_at.desc(), ChatMessage.id.desc()).limit(limit)
-    )
+    newest = session.scalars(query.order_by(ChatMessage.created_at.desc(), ChatMessage.id.desc()).limit(limit))
     return list(reversed(list(newest)))
