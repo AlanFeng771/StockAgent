@@ -160,7 +160,7 @@ LLM 在這層的角色是**根據結構化事實做判斷推論**，不是把數
 
 **設計原則（執行安全性）**：
 - 讀取類工具（`list_watchlist`/`get_latest_price`/`get_stock_report`）可讓 ChatGPT 自由呼叫，無需使用者二次確認
-- **會改變狀態的工具**（`add_watchlist_stock`/`remove_watchlist_stock`，尤其是刪除）執行後，回覆需明確告知使用者「已執行了什麼操作」；是否要在刪除前額外要求二次確認列入待確認事項
+- **會改變狀態的工具**執行後，回覆需明確告知使用者「已執行了什麼操作」；權限分三級（一般／危險需人按確認／禁止），詳見 Stage 8 使用者確認（2026-10-13）
 - 日常分析報告的取得仍**優先讀當天已算好的結果**（`get_stock_report`），不透過聊天隱式觸發即時重新分析
 
 ### 資料庫 Schema（SQLite + SQLAlchemy）
@@ -404,12 +404,22 @@ DATABASE_URL=sqlite:///./data/stockagent.db
   - [x] `uv run pytest backend/tests/test_api_*.py` 全過（全部 397 passed）
   - [x] `/docs` Swagger 手動測試一輪（使用者 2026-10-13 確認通過）
 
-### Stage 8：聊天工具層
+### Stage 8：聊天工具層（程式完成，待使用者人工測試）
+- **使用者確認（2026-10-13）**：
+  - **工具三級權限**：一般（直接執行，回覆告知做了什麼）／危險（後端不執行，建立「待確認動作」，**只有人按按鈕**才執行）／禁止（不提供工具給 LLM，只在 system prompt 告知「請到哪裡做」由 LLM 文字引導）。分級寫在程式（有測試保護），不放設定檔
+  - 分級：查清單、查價格（最近收盤＋資料日期）、查報告、查歷史報告、加入清單＝一般；移除清單、分析單檔（花 OpenAI 費用）＝危險；分析整份清單（→儀表板）、下單交易（不支援）、改設定/API Key（→改 .env）＝禁止
+  - 危險動作由**後端強制**擋下（不靠 prompt）：LLM 沒有「確認」工具；確認走 `POST /api/chat/actions/{id}/confirm`（前端按鈕）。參數建立時凍結、只能用一次、10 分鐘過期；取消/過期也寫入聊天紀錄
+  - 確認後結果**直接用固定格式**回傳並顯示（A 方案，不再呼叫 LLM 轉述）：移除 →「已移除追蹤：2330 台積電」；分析 → 報告摘要（看法、買賣點、目標、停損、持有建議），同時寫入聊天紀錄供下一輪 LLM 參考
+  - 聊天模型 gpt-4o；工具呼叫最多 5 輪（超過則不給工具、要求 LLM 直接回覆）
+  - 聊天紀錄**定期總結**：未總結訊息達 30 則（最近 10 則＋每 20 則）時，用 **gpt-4o-mini** 把較舊的 20 則併入摘要；送給 LLM 的內容＝摘要＋未總結的原文。數字與模型皆可在設定檔調整
 - **規格**：兩類工具（清單管理、股票資訊查詢）的 input/output schema；會改變狀態的工具執行後必須在回覆中明確告知使用者
 - **測試**：mock OpenAI 的 `tool_calls` 回應，驗證 `chat_service` 能正確分派到對應 handler、組裝 `role="tool"` 回應格式正確、多輪迴圈能正確終止（不會無限loop）
-- **實作**：`chat/tools.py`／`chat_service.py`
+- **實作**：`chat/quote.py`（QuoteProvider）、`chat/tools.py`（註冊表＋分級）、`chat/actions.py`（待確認動作）、`chat/chat_service.py`（agentic loop＋摘要）、`pipeline/watchlist.py`（加入清單共用邏輯）、`api/routes_chat.py`、prompt：`llm/prompts/chat/`、`llm/prompts/chat_summary/`；資料表新增 `PendingAction`、`ChatSummary`
+  - 端點：`POST /api/chat`、`GET /api/chat/history`、`POST /api/chat/actions/{id}/confirm`、`/cancel`（查無 404、已處理 409、過期 410、分析忙碌 409 且動作保留；沒有 OpenAI key 503）
+  - 確認時以條件式 UPDATE 搶執行權（連點只執行一次）；聊天回應的 `actions_taken` 列出每次工具呼叫與結果
+  - **實測（2026-10-13，暫存資料庫）**：第一版 prompt 下，「把2330移除」時 gpt-4o **沒有呼叫工具**、直接回「請按確認」→ 畫面不會有按鈕。已改 prompt：危險動作必須直接呼叫工具、只有工具回傳 pending_confirmation 才能請使用者按確認。重測：加入（直接執行）、移除與分析（建立待確認、未執行）、移除不在清單的 9999（如實回報）、要求全清單分析（引導到儀表板）皆正確
 - **驗收**：
-  - [ ] `uv run pytest backend/tests/test_chat_service.py` 全過
+  - [x] `uv run pytest backend/tests/test_chat_*.py backend/tests/test_api_chat.py` 全過（全部 465 passed）
   - [ ] 用真實OpenAI Key人工測試：「幫我把2454加入追蹤清單」後 `Watchlist` 表真的新增一筆；「調出2330的基本資訊」能回報最近交易日收盤資料，且回覆中明確標示資料日期（非即時價）
 
 ### Stage 9：前端 - 儀表板模式

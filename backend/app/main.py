@@ -3,7 +3,8 @@
 規格（Stage 7 spec，2026-10-01 使用者確認安全性與全清單背景執行）
 ==============================================================
 
-``create_app(settings=None, session_factory=None, analyzer=None, stock_lookup=None, jobs=None) -> FastAPI``
+``create_app(settings=None, session_factory=None, analyzer=None, stock_lookup=None, jobs=None,
+quote_provider=None, chat_service=None) -> FastAPI``
 各相依皆可注入（測試不打 FinMind / OpenAI、不碰真實資料庫）；不帶時用統一設定。
 資料庫連線**第一次使用時才建立**，import 本模組不會產生資料庫檔案。
 
@@ -31,6 +32,11 @@
 - ``GET  /api/analysis/status``：最近一次全清單分析的進度
 - ``POST /api/analysis/run/{stock_id}``：同步分析單檔並存檔，回傳報告（含訊號）；忙碌 409、
   查無代號 404、無股價 422、FinMind 錯誤 502
+- ``POST /api/chat`` {session_id?, message}：聊天（Stage 8）；回覆、執行過的工具、待確認動作。
+  沒有 OpenAI key 503、LLM 錯誤 502、訊息為空/過長/session_id 格式錯 422
+- ``GET  /api/chat/history?session_id=&limit=``：聊天紀錄（含動作紀錄）＋仍待確認的動作
+- ``POST /api/chat/actions/{id}/confirm``、``/cancel``：危險動作的確認／取消（前端按鈕）；
+  查無 404、已處理 409、已過期 410、分析忙碌 409（動作保留待確認）
 錯誤回應格式：{"detail": 說明, "error": 例外類別名}
 """
 
@@ -41,8 +47,10 @@ from typing import Callable
 from fastapi import FastAPI
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
-from backend.app.api import routes_analysis, routes_reports, routes_watchlist
+from backend.app.api import routes_analysis, routes_chat, routes_reports, routes_watchlist
 from backend.app.api.deps import register_error_handlers, register_json_only_post
+from backend.app.chat.chat_service import ChatService
+from backend.app.chat.quote import FinMindQuoteProvider, QuoteProvider
 from backend.app.config import Settings, get_settings
 from backend.app.data_sources.finmind_client import create_finmind_client
 from backend.app.data_sources.stock_profile import StockProfile, resolve_stock_profile
@@ -56,6 +64,8 @@ def create_app(
     analyzer: Callable | None = None,
     stock_lookup: Callable[[str], StockProfile | None] | None = None,
     jobs: AnalysisJobManager | None = None,
+    quote_provider: QuoteProvider | None = None,
+    chat_service: ChatService | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
 
@@ -71,11 +81,13 @@ def create_app(
     app.state.analyzer = analyzer or default_analyzer
     app.state.stock_lookup = stock_lookup or default_stock_lookup
     app.state.jobs = jobs or AnalysisJobManager()
+    app.state.quote_provider = quote_provider or FinMindQuoteProvider(settings=settings)  # 第一次查詢才連 FinMind
+    app.state.chat_service = chat_service or ChatService(settings=settings)  # 第一次聊天才建立 OpenAI client
 
     register_error_handlers(app)
     register_json_only_post(app)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.api_allowed_hosts)
-    for router in (routes_watchlist.router, routes_reports.router, routes_analysis.router):
+    for router in (routes_watchlist.router, routes_reports.router, routes_analysis.router, routes_chat.router):
         app.include_router(router)
     return app
 

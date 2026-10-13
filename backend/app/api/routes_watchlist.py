@@ -9,8 +9,7 @@ from sqlalchemy.orm import Session
 from backend.app.api.deps import get_session
 from backend.app.api.schemas import HealthOut, WatchlistIn, WatchlistItem
 from backend.app.db import crud
-from backend.app.db.crud import WatchlistAlreadyExistsError
-from backend.app.pipeline.analyze_stock import StockNotFoundError
+from backend.app.pipeline.watchlist import add_stock_to_watchlist
 
 router = APIRouter(prefix="/api")
 
@@ -28,13 +27,7 @@ def list_watchlist(session: Session = Depends(get_session)):
 
 @router.post("/watchlist", response_model=WatchlistItem, status_code=201)
 def add_watchlist(body: WatchlistIn, request: Request, session: Session = Depends(get_session)):
-    stock_id = crud.normalize_stock_id(body.stock_id)
-    if crud.get_watchlist_item(session, stock_id) is not None:  # 先檢查，避免不必要的 FinMind 呼叫
-        raise WatchlistAlreadyExistsError(f"{stock_id} 已在追蹤清單中")
-    profile = request.app.state.stock_lookup(stock_id)
-    if profile is None:
-        raise StockNotFoundError(f"查無股票代號 {stock_id}")
-    return crud.add_watchlist(session, stock_id, profile.stock_name)
+    return add_stock_to_watchlist(session, body.stock_id, request.app.state.stock_lookup)
 
 
 @router.delete("/watchlist/{stock_id}", response_model=WatchlistItem)

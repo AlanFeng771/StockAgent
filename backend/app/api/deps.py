@@ -8,7 +8,11 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from backend.app.chat.actions import ActionExpiredError, ActionNotFoundError, ActionNotPendingError
+from backend.app.chat.chat_service import ChatInputError, ChatLLMError, ChatNotConfiguredError
+from backend.app.chat.tools import ToolContext
 from backend.app.data_sources.finmind_client import FinMindClientError
+from backend.app.db import crud
 from backend.app.db.crud import (
     InvalidStockIdError,
     ReportNotFoundError,
@@ -30,6 +34,12 @@ ERROR_STATUS = {
     DataSourceError: 502,
     FinMindClientError: 502,
     AnalysisBusyError: 409,
+    ActionNotFoundError: 404,
+    ActionNotPendingError: 409,
+    ActionExpiredError: 410,
+    ChatInputError: 422,
+    ChatNotConfiguredError: 503,
+    ChatLLMError: 502,
 }
 
 
@@ -63,3 +73,24 @@ def session_factory_of(request: Request):
 def get_session(request: Request) -> Iterator[Session]:
     with session_factory_of(request)() as session:
         yield session
+
+
+def analyze_and_save_of(request: Request):
+    """分析單檔並存檔（手動分析端點與聊天確認共用）。"""
+    analyzer = request.app.state.analyzer
+    factory = session_factory_of(request)
+
+    def run(stock_id: str):
+        result = analyzer(stock_id)
+        with factory() as session:
+            return crud.save_report(session, result)
+
+    return run
+
+
+def tool_context(request: Request, session: Session) -> ToolContext:
+    state = request.app.state
+    return ToolContext(
+        session=session, stock_lookup=state.stock_lookup, quote_provider=state.quote_provider,
+        run_analysis=lambda stock_id: state.jobs.run_single(stock_id, analyze_and_save_of(request)),
+    )

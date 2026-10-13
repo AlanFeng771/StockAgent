@@ -35,6 +35,16 @@ class Settings(BaseSettings):
     openai_timeout_seconds: float = 60.0
     openai_repair_attempts: int = 1      # 報告有價格警告時，回饋給 LLM 自動修正的最多次數（0 = 不修正）
 
+    # 聊天（Stage 8；行為定義見 chat/chat_service.py）
+    chat_model: str = "gpt-4o"
+    chat_temperature: float = 0.3
+    chat_max_tool_rounds: int = 5          # 一次回答最多連續呼叫工具的輪數，超過則要求 LLM 直接回覆
+    chat_summary_model: str = "gpt-4o-mini"
+    chat_recent_messages: int = 10         # 總結後保留的最近原文則數
+    chat_summary_every: int = 20           # 每累積 N 則新訊息就把較舊的併入摘要
+    chat_action_ttl_minutes: int = 10      # 危險動作待確認的有效時間
+    chat_message_max_chars: int = 2000
+
     # 排程（Stage 6，目前延後）
     daily_analysis_hour: int = 17
     daily_analysis_minute: int = 0

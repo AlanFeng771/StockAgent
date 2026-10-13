@@ -10,7 +10,10 @@
   warnings、initial_warnings、repair_attempts、token 用量
   - ``signals_json``：``StockSignals``（含技術指標快照、價位、新聞）
   - ``report_json``：``StockReport``；LLM 沒有產出時為 NULL
-- ``ChatMessage``：聊天紀錄（Stage 8 使用）
+- ``ChatMessage``：聊天紀錄（Stage 8）。role：user / assistant / action（確認、取消、過期危險動作的系統紀錄）
+- ``PendingAction``：危險工具的待確認動作（Stage 8）。id 為隨機字串；arguments 建立時凍結；
+  status：pending → executing → done / failed，或 cancelled / expired
+- ``ChatSummary``：每個 session 一筆聊天摘要，covered_until_id 之前（含）的訊息已併入摘要
 時間欄位為本機時間（naive datetime；本專案在台灣本機執行）。
 """
 
@@ -68,3 +71,29 @@ class ChatMessage(Base):
     content: Mapped[str] = mapped_column(Text)
     related_stock_id: Mapped[str | None] = mapped_column(String(16))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
+class PendingAction(Base):
+    __tablename__ = "pending_action"
+    __table_args__ = (Index("ix_action_session_status", "session_id", "status"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    session_id: Mapped[str] = mapped_column(String(64))
+    tool_name: Mapped[str] = mapped_column(String(64))
+    arguments: Mapped[dict] = mapped_column(JSON)
+    summary: Mapped[str] = mapped_column(String(200))
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    result_message: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class ChatSummary(Base):
+    __tablename__ = "chat_summary"
+
+    session_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    content: Mapped[str] = mapped_column(Text)
+    covered_until_id: Mapped[int] = mapped_column(Integer)
+    model: Mapped[str] = mapped_column(String(64))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)

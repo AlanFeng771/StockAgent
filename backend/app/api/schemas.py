@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+from backend.app.chat.chat_service import PendingActionOut
 
 from backend.app.db.models import AnalysisReport
 from backend.app.llm.report_schema import StockReport
@@ -68,3 +70,28 @@ class RunRequest(BaseModel):
 class HealthOut(BaseModel):
     status: str
     database: str
+
+
+class ChatIn(BaseModel):
+    session_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{1,64}$",
+                                   description="對話 id；不給則開新對話（回應會帶回新 id）")
+    message: str = Field(min_length=1)
+
+
+class ChatMessageOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    role: str
+    content: str
+    created_at: datetime
+
+
+class ChatHistoryOut(BaseModel):
+    session_id: str
+    messages: list[ChatMessageOut]
+    pending_actions: list[PendingActionOut]
+
+
+class ActionRequest(BaseModel):
+    """確認／取消待確認動作的請求內容（送 {} 即可；宣告成 JSON body 的原因同 RunRequest）。"""
