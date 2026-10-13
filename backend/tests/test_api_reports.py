@@ -69,3 +69,24 @@ def test_latest_reports_for_watchlist(api):
 
 def test_invalid_stock_id_is_422(api):
     assert api.get("/api/reports/2330.TW/latest").status_code == 422
+
+
+def test_summary_includes_close_change_and_price_date_for_cards(api):
+    api.post("/api/watchlist", json={"stock_id": "2330"})
+    save(api)
+
+    card = api.get("/api/reports/latest").json()[0]
+
+    assert card["close"] == SIGNALS.technical.snapshot["close"]
+    assert card["change_pct"] == SIGNALS.technical.snapshot["change_pct"]
+    assert card["price_date"] == SIGNALS.data_freshness["price"].isoformat()
+
+
+def test_summary_price_fields_null_without_technical(api):
+    signals = SIGNALS.model_copy(update={"technical": None})
+    with api.session_factory() as session:
+        crud.save_report(session, make_result(signals))
+
+    body = api.get("/api/reports/2330/latest").json()
+
+    assert body["close"] is None and body["change_pct"] is None

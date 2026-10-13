@@ -29,6 +29,9 @@ class ReportSummary(BaseModel):
     id: int
     stock_id: str
     stock_name: str | None
+    close: float | None          # 分析當時的收盤價（卡片顯示用）
+    change_pct: float | None
+    price_date: date | None
     analysis_date: date
     generated_at: datetime
     llm_status: str
@@ -43,9 +46,13 @@ class ReportSummary(BaseModel):
 
     @classmethod
     def from_row(cls, row: AnalysisReport, **extra) -> "ReportSummary":
-        profile = (row.signals_json or {}).get("profile") or {}
+        signals = row.signals_json or {}
+        profile = signals.get("profile") or {}
+        snapshot = (signals.get("technical") or {}).get("snapshot") or {}
         return cls(
             id=row.id, stock_id=row.stock_id, stock_name=profile.get("stock_name"),
+            close=snapshot.get("close"), change_pct=snapshot.get("change_pct"),
+            price_date=(signals.get("data_freshness") or {}).get("price"),
             analysis_date=row.analysis_date, generated_at=row.generated_at, llm_status=row.llm_status,
             report=None if row.report_json is None else StockReport.model_validate(row.report_json),
             error=row.error, warnings=row.warnings or [], repair_attempts=row.repair_attempts,
