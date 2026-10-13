@@ -1,4 +1,12 @@
-import type { JobStatus, ReportDetail, ReportSummary, WatchlistItem } from "../types/api";
+import type {
+  ActionOutcome,
+  ChatHistory,
+  ChatReply,
+  JobStatus,
+  ReportDetail,
+  ReportSummary,
+  WatchlistItem,
+} from "../types/api";
 
 /** 後端錯誤：status 為 HTTP 狀態碼，error 為後端例外類別名（例如 WatchlistAlreadyExistsError）。 */
 export class ApiError extends Error {
@@ -50,11 +58,19 @@ export const api = {
   runAll: () => request<JobStatus>("POST", "/api/analysis/run"),
   analysisStatus: () => request<JobStatus>("GET", "/api/analysis/status"),
   runOne: (stockId: string) => request<ReportDetail>("POST", `/api/analysis/run/${id(stockId)}`),
+  chat: (message: string, sessionId?: string) =>
+    request<ChatReply>("POST", "/api/chat", { message, session_id: sessionId }),
+  chatHistory: (sessionId: string) =>
+    request<ChatHistory>("GET", `/api/chat/history?session_id=${id(sessionId)}&limit=200`),
+  confirmAction: (actionId: string) => request<ActionOutcome>("POST", `/api/chat/actions/${id(actionId)}/confirm`),
+  cancelAction: (actionId: string) => request<ActionOutcome>("POST", `/api/chat/actions/${id(actionId)}/cancel`),
 };
 
 export function errorMessage(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.error === "AnalysisBusyError") return "已有分析在執行中，請稍後再試";
+    if (err.error === "ActionExpiredError") return "這個動作已過期（超過確認時限），請重新提出要求";
+    if (err.error === "ChatNotConfiguredError") return "尚未設定 OPENAI_API_KEY，無法使用聊天";
     return err.message;
   }
   return err instanceof Error ? err.message : String(err);

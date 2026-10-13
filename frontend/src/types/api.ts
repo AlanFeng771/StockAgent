@@ -133,3 +133,50 @@ export interface JobStatus {
   started_at: string | null;
   finished_at: string | null;
 }
+
+// ---- 聊天（Stage 8 後端） ----
+
+export interface PendingAction {
+  id: string;
+  tool_name: string;
+  arguments: Record<string, unknown>;
+  summary: string;
+  created_at: string;
+  expires_at: string;
+}
+
+export interface ActionLog {
+  tool: string;
+  arguments: Record<string, unknown> | string;
+  level: "auto" | "confirm" | null;
+  status: "executed" | "failed" | "pending_confirmation" | "rejected";
+  summary: string | null;
+  error: string | null;
+  action_id: string | null;
+}
+
+export interface ChatReply {
+  session_id: string;
+  reply: string;
+  actions_taken: ActionLog[];
+  pending_actions: PendingAction[];
+}
+
+export interface ChatMessage {
+  id: number;
+  role: "user" | "assistant" | "action";
+  content: string;
+  created_at: string;
+}
+
+export interface ChatHistory {
+  session_id: string;
+  messages: ChatMessage[];
+  pending_actions: PendingAction[];
+}
+
+export interface ActionOutcome {
+  action_id: string;
+  status: "done" | "failed" | "cancelled";
+  message: string;
+}

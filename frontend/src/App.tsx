@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "./api/client";
+import { ChatPanel } from "./components/ChatPanel";
 import { Dashboard } from "./pages/Dashboard";
 import { StockDetail } from "./pages/StockDetail";
 
@@ -32,9 +33,11 @@ function BackendStatus() {
 export default function App() {
   const hash = useHash();
   const stockId = hash.match(/^#\/stock\/([0-9A-Za-z]+)$/)?.[1];
-  const [chatOpen, setChatOpen] = useState(true);
-  // 聊天欄（Stage 10）執行動作後遞增，讓儀表板重新載入
-  const [refreshKey] = useState(0);
+  // 寬螢幕預設開啟聊天欄；窄螢幕預設關閉，開啟時以覆蓋面板顯示
+  const [chatOpen, setChatOpen] = useState(() => window.matchMedia("(min-width: 1024px)").matches);
+  // 聊天中的動作（加入、確認移除/分析）完成後遞增，讓儀表板重新載入
+  const [refreshKey, setRefreshKey] = useState(0);
+  const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
@@ -48,9 +51,9 @@ export default function App() {
         <button
           type="button"
           onClick={() => setChatOpen((open) => !open)}
-          className="hidden rounded-lg px-3 py-1.5 text-sm text-slate-600 ring-1 ring-slate-300 hover:bg-slate-50 lg:block"
+          className="rounded-lg px-3 py-1.5 text-sm text-slate-600 ring-1 ring-slate-300 hover:bg-slate-50"
         >
-          {chatOpen ? "收合聊天" : "開啟聊天"}
+          {chatOpen ? "收合聊天" : "聊天助理"}
         </button>
       </header>
 
@@ -58,14 +61,12 @@ export default function App() {
         <main className="min-w-0 flex-1 p-6">
           {stockId ? <StockDetail stockId={stockId} refreshKey={refreshKey} /> : <Dashboard refreshKey={refreshKey} />}
         </main>
-        {chatOpen && (
-          <aside className="sticky top-14 hidden h-[calc(100vh-3.5rem)] w-96 shrink-0 flex-col border-l border-slate-200 bg-white lg:flex">
-            <div className="border-b border-slate-200 px-4 py-3 font-semibold">聊天助理</div>
-            <div className="flex flex-1 items-center justify-center p-6 text-center text-sm text-slate-400">
-              聊天功能將在下一階段（Stage 10）加入
-            </div>
-          </aside>
-        )}
+        {/* 關閉時只隱藏不卸載，保留對話與輸入中的內容 */}
+        <aside
+          className={`${chatOpen ? "flex" : "hidden"} fixed inset-0 z-50 flex-col bg-white shadow-xl sm:left-auto sm:w-[28rem] sm:border-l sm:border-slate-200 lg:sticky lg:inset-auto lg:top-14 lg:z-auto lg:h-[calc(100vh-3.5rem)] lg:w-96 lg:shrink-0 lg:shadow-none`}
+        >
+          <ChatPanel onChanged={refresh} onClose={() => setChatOpen(false)} />
+        </aside>
       </div>
     </div>
   );
